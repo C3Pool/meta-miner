@@ -40,7 +40,7 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
  "miner_host": "127.0.0.1",
  "miner_port": 3333,
  "pools": [
-  "gulf.moneroocean.stream:10001"
+  "mine.c3pool.com:13333"
  ],
  "algos": {
   "cn/1": "./xmrig --config=config.json",
@@ -129,9 +129,9 @@ For c29 algo check [configuration guide for cuckaroo29](c29.md).
 
 Place mm.exe or mm.js (with nodejs installed) into unpacked miner directory either by:
 
-* Download and unpack the latest mm-vX.X.zip from https://github.com/MoneroOcean/meta-miner/releases
+* Download and unpack the latest mm-vX.X.zip from https://github.com/C3Pool/meta-miner/releases
 
-* Download and install nodejs using https://nodejs.org/dist/v8.11.3/node-v8.11.3-x64.msi installator and download and unpack https://raw.githubusercontent.com/MoneroOcean/meta-miner/master/mm.js
+* Download and install nodejs using https://nodejs.org/dist/v8.11.3/node-v8.11.3-x64.msi installator and download and unpack https://raw.githubusercontent.com/C3Pool/meta-miner/master/mm.js
 
 ### Usage example with xmrig on Windows
 
@@ -145,7 +145,7 @@ Place mm.exe or mm.js (with nodejs installed) into unpacked miner directory eith
 * Run Meta Miner (or use "node mm.js" instead of mm.exe):
 
 ```shell
-mm.exe -p=gulf.moneroocean.stream:10001 -m="xmrig-amd.exe --config=config.json"
+mm.exe -p=mine.c3pool.com:13333 -m="xmrig-amd.exe --config=config.json"
 ```
 
 ## Usage examples on Linux (Ubuntu 18.04)
@@ -155,7 +155,7 @@ Get node and Meta Miner (mm.js) in the miner directory:
 ```shell
 sudo apt-get update
 sudo apt-get install -y nodejs
-wget https://raw.githubusercontent.com/MoneroOcean/meta-miner/master/mm.js
+wget https://raw.githubusercontent.com/C3Pool/meta-miner/master/mm.js
 chmod +x mm.js
 ```
 
@@ -179,33 +179,13 @@ sed -i 's/"user": *"[^"]*",/"user": "44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9
 * Run Meta Miner:
 
 ```shell
-./mm.js -p=gulf.moneroocean.stream:10001 -m="./xmrig --config=config.json"
+./mm.js -p=mine.c3pool.com:13333 -m="./xmrig --config=config.json"
 ```
 
 ## Developer Donations
 
 If you'd like to make a one time donation, the addresses are as follows:
 
-* XMR - ```44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9i4ZgKpgQXZYR4AMJxBJbfbKZGWUxZU42QyZSsP4AyZZMbJBCrWr1```
-* AEON - ```WmsEg3RuUKCcEvFBtXcqRnGYfiqGJLP1FGBYiNMgrcdUjZ8iMcUn2tdcz59T89inWr9Vae4APBNf7Bg2DReFP5jr23SQqaDMT```
-* ETN - ```etnkQMp3Hmsay2p7uxokuHRKANrMDNASwQjDUgFb5L2sDM3jqUkYQPKBkooQFHVWBzEaZVzfzrXoETX6RbMEvg4R4csxfRHLo1```
-* SUMO - ```Sumoo1DGS7c9LEKZNipsiDEqRzaUB3ws7YHfUiiZpx9SQDhdYGEEbZjRET26ewuYEWAZ8uKrz6vpUZkEVY7mDCZyGnQhkLpxKmy```
-* GRFT - ```GACadqdXj5eNLnyNxvQ56wcmsmVCFLkHQKgtaQXNEE5zjMDJkWcMVju2aYtxbTnZgBboWYmHovuiH1Ahm4g2N5a7LuMQrpT```
-* MSR - ```5hnMXUKArLDRue5tWsNpbmGLsLQibt23MEsV3VGwY6MGStYwfTqHkff4BgvziprTitbcDYYpFXw2rEgXeipsABTtEmcmnCK```
-* ITNS - ```iz53aMEaKJ25zB8xku3FQK5VVvmu2v6DENnbGHRmn659jfrGWBH1beqAzEVYaKhTyMZcxLJAdaCW3Kof1DwTiTbp1DSqLae3e```
-* WOW - ```Wo3yjV8UkwvbJDCB1Jy7vvXv3aaQu3K8YMG6tbY3Jo2KApfyf5RByZiBXy95bzmoR3AvPgNq6rHzm98LoHTkzjiA2dY7sqQMJ```
-* XMV - ```XvyVfpAYp3zSuvdtoHgnDzMUf7GAeiumeUgVC7RTq6SfgtzGEzy4dUgfEEfD5adk1kN4dfVZdT3zZdgSD2xmVBs627Vwt2C3Ey```
-* RYO - ```RYoLsi22qnoKYhnv1DwHBXcGe9QK6P9zmekwQnHdUAak7adFBK4i32wFTszivQ9wEPeugbXr2UD7tMd6ogf1dbHh76G5UszE7k1```
-* XTL - ```Se3Qr5s83AxjCtYrkkqg6QXJagCVi8dELbHb5Cnemw4rMk3xZzEX3kQfWrbTZPpdAJSP3enA6ri3DcvdkERkGKE518vyPQTyi```
-* XHV - ```hvxyEmtbqs5TEk9U2tCxyfGx2dyGD1g8EBspdr3GivhPchkvnMHtpCR2fGLc5oEY42UGHVBMBANPge5QJ7BDXSMu1Ga2KFspQR```
-* TUBE - ```bxcpZTr4C41NshmJM9Db7FBE5crarjaDXVUApRbsCxHHBf8Jkqjwjzz1zmWHhm9trWNhrY1m4RpcS7tmdG4ykdHG2kTgDcbKJ```
-* LOKI - ```L6XqN6JDedz5Ub8KxpMYRCUoQCuyEA8EegEmeQsdP5FCNuXJavcrxPvLhpqY6emphGTYVrmAUVECsE9drafvY2hXUTJz6rW```
-* TRTL - ```TRTLv2x2bac17cngo1r2wt3CaxN8ckoWHe2TX7dc8zW8Fc9dpmxAvhVX4u4zPjpv9WeALm2koBLF36REVvsLmeufZZ1Yx6uWkYG```
-* XTNC - ```XtazhSxz1bbJLpT2JuiD2UWFUJYSFty5SVWuF6sy2w9v8pn69smkUxkTVCQc8NKCd6CBMNDGzgdPRYBKaHdbgZ5SNptVH1yPCTQ```
-* IRD - ```ir3DHyB8Ub1aAHEewMeUxQ7b7tQdWa7VL8M5oXDPohS3Me4nhwvALXM4mym2kWg9VsceT75dm6XWiWF1K4zu8RVQ1HJD8Z3R9```
-* ARQ - ```ar4Ha6ZQCkKRhkKQLfexv7VZQM2MhUmMmU9hmzswCPK4T3o2rbPKZM1GxEoYg4AFQsh57PsEets7sbpU958FAvxo2RkkTQ1gE```
-* XWP - ```fh4MCJrakhWGoS6Meqp6UxGE1GNfAjKaRdPjW36rTffDiqvEq2HWEKZhrbYRw7XJb3CXxkjL3tcYGTT39m5qgjvk1ap4bVu1R```
-* BTC - ```3BzvMuLStA388kYZ9nudfm8L22937dSPS3```
-* BCH - ```qrhww48p5s6zw9twhc7cujgwp7vym2k4vutem6f92p```
-* ETH - ```0xCF8BABC074C487Ae17F9Ce0394eab492E6A35658```
-* LTC - ```MCkjQo99VzoeZQ1piDzLDb4uqNSDRZpx55```
+* XMR - ```43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV```
+* BTC - ```3Q4QT5WKMzCh4WqsGF2nKxc8XoLuLLuMqk```
+
