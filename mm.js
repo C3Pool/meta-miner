@@ -3,7 +3,7 @@
 // Meta Miner: adding algo switching support to *any* stratum miner
 // Algo switching is supported by https://c3pool.com mining pool
 
-// Copyright 2018 MoneroOcean <https://github.com/MoneroOcean>, <support@moneroocean.stream>
+// Copyright 2018 c3pool <https://github.com/C3Pool>, <c3pool@outlook.com>
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -50,8 +50,8 @@ const hashrate_regexes = [
   [1,    1, /\(Avr ([\d\.]+)H\/s\)/],                                     // CryptoDredge
   [1e3,  3, /Total[^:]+:\s*([\d\.]+)\s*kh\/s/],                           // TeamRedMiner variant 1 (kh/s)
   [1,    3, /Total[^:]+:\s*([\d\.]+)\s*h\/s/],                            // TeamRedMiner variant 2 (h/s)
-  [1/32, 1, /mining at ([\d\.]+) gps/],                                   // SwapReferenceMiner (use mode=rolling command line option)
-  [1/16, 2, /Total : ([\d\.]+) gps/],                                     // MoneroVMiner
+  [1/32, 1, /mining at\s+([\d\.]+) gps/],                                   // SwapReferenceMiner (use mode=rolling command line option)
+  [1/16, 2, /Total\s+:\s+([\d\.]+) gps/],                                     // MoneroVMiner
 ];
 
 // main algos we bench for
