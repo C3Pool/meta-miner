@@ -100,7 +100,7 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
   "c29v": 0.25125
  },
  "algo_min_time": 0,
- "user": "44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9i4ZgKpgQXZYR4AMJxBJbfbKZGWUxZU42QyZSsP4AyZZMbJBCrWr1",
+ "user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV",
  "pass": "x",
  "log_file": null,
  "watchdog": 600,
@@ -140,7 +140,7 @@ Place mm.exe or mm.js (with nodejs installed) into unpacked miner directory eith
 * Modify config.json file in xmrig directory this way and adjust it for the best threads performance (out of scope of this guide):
 
 	* Set "url" to "localhost:3333"
-	* Set "user" to "44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9i4ZgKpgQXZYR4AMJxBJbfbKZGWUxZU42QyZSsP4AyZZMbJBCrWr1" (put your Monero wallet address)
+	* Set "user" to "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV" (put your Monero wallet address)
 
 * Run Meta Miner (or use "node mm.js" instead of mm.exe):
 
@@ -173,7 +173,7 @@ cd xmrig-5.4.0
 
 ```shell
 sed -i 's/"url": *"[^"]*",/"url": "localhost:3333",/' config.json
-sed -i 's/"user": *"[^"]*",/"user": "44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9i4ZgKpgQXZYR4AMJxBJbfbKZGWUxZU42QyZSsP4AyZZMbJBCrWr1",/' config.json
+sed -i 's/"user": *"[^"]*",/"user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV",/' config.json
 ```
 
 * Run Meta Miner:
