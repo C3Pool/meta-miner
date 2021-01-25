@@ -16,7 +16,7 @@ Options:
         --port=<number>:                defines port that will be used for miner connections (3333 by default)
         --user=<wallet> (-u):           <wallet> to use as pool user login (will be taken from the first miner otherwise)
         --pass=<miner_id>:              <miner_id> to use as pool pass login (will be taken from the first miner otherwise)
-        --perf_<algo>=<hashrate>        Sets hashrate for algo that is: rx/0, rx/wow, defyx, cn/r, cn-pico/trtl, cn-heavy/xhv, cn/gpu, argon2/chukwa, k12, c29s, c29v
+        --perf_<algo>=<hashrate>        Sets hashrate for algo that is: rx/0, rx/wow, defyx, cn/r, cn-pico/trtl, cn-heavy/xhv, cn/gpu, argon2/chukwa, k12, c29s, c29v, c29b, kawpow, ethash
         --algo_min_time=<seconds>       Sets <seconds> minimum time pool should keep our miner on one algo (0 default, set higher for starting miners)
         --miner=<command_line> (-m):    <command_line> to start smart miner that can report algo itself
         --<algo>=<command_line>:        <command_line> to start miner for <algo> that can not report it itself
@@ -63,12 +63,13 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
   "rx/loki": "./xmrig --config=config.json",
   "rx/arq": "./xmrig --config=config.json",
   "rx/sfx": "./xmrig --config=config.json",
-  "rx/v": "./xmrig --config=config.json",
   "argon2/chukwa": "./xmrig --config=config.json",
   "argon2/wrkz": "./xmrig --config=config.json",
-  "c29b": "./tube4referenceMiner/tube4referenceMinerCLI mode=rolling",
-  "c29s": "./SwapReferenceMiner/SwapReferenceMinerCLI mode=rolling",
-  "c29v": "./MoneroVMiner/bin/MoneroVMiner"
+  "ethash": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo ethash --proto stratum",
+  "kawpow": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo kawpow",
+  "c29s": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckaroo29s",
+  "c29b": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckaroo29b",
+  "c29v": "./gminer39/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckarood29"
  },
  "algo_perf": {
   "rx/0": 243.6,
@@ -83,7 +84,6 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
   "c29s": 0,
   "c29v": 0,
   "rx/loki": 243.6,
-  "rx/v": 243.6,
   "cn/0": 49.8,
   "cn/1": 49.8,
   "cn/2": 49.8,
@@ -97,9 +97,11 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
   "cn/double": 24.9,
   "cn-heavy/0": 30.5,
   "cn-heavy/tube": 30.5,
-  "c29b": 0.07,
-  "c29s": 0.0953125,
-  "c29v": 0.25125
+  "c29b": 0.1865,
+  "c29s": 0.23375,
+  "c29v": 0.4875,
+  "kawpow": 0.003953464329242706,
+  "ethash": 49860000
  },
  "algo_min_time": 0,
  "user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV",
@@ -124,8 +126,9 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
 
 * To rerun benchmark for specific algorithm class use --perf_*algo*=0 option.
 
-The configuration guide below is for stock xmrig. For xmr-stak/rx check [configuration guide for xmr-stak](xmr-stak.md).
-For c29 algo check [configuration guide for cuckaroo29](c29.md).
+The configuration guide below is for stock xmrig. For xmr-stak/rx check [configuration guide for xmr-stak](xmr-stak.md) page.
+For GPU mining setup using gminer algo check [configuration guide for gminer](gminer.md) page.
+For c29 algo reference miner setup check [configuration guide for cuckaroo29](c29.md) page.
 
 ## Usage examples on Windows
 
@@ -190,4 +193,4 @@ If you'd like to make a one time donation, the addresses are as follows:
 
 * XMR - ```43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV```
 * BTC - ```3Q4QT5WKMzCh4WqsGF2nKxc8XoLuLLuMqk```
-
+* ETH - ```0x127a48f0A13d347215184720314de4d009509D38```
