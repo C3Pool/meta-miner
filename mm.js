@@ -3,7 +3,7 @@
 // Meta Miner: adding algo switching support to *any* stratum miner
 // Algo switching is supported by https://c3pool.com mining pool
 
-// Copyright 2018 C3Pool <https://github.com/C3Pool>, <C3Pool@outlook.com>
+// Copyright 2019 C3Pool <https://github.com/C3Pool>, <support@c3pool.com>
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ const child_process = require('child_process');
 // *** CONSTS                                                                ***
 // *****************************************************************************
 
-const VERSION      = "v4.2";
+const VERSION      = "v4.4";
 const DEFAULT_ALGO = "rx/0"; // this is algo that is assumed to be sent by pool if its job does not contain algo stratum extension
 const AGENT        = "Meta Miner " + VERSION;
 
@@ -43,8 +43,8 @@ const AGENT        = "Meta Miner " + VERSION;
 // the nr benchmark prints is to make sure hashrate has stabilized before snapping the benchmark value
 const hashrate_regexes = [
   [1,       1, /\[[^\]]+\] speed 2.5s\/60s\/15m [\d\.]+ ([\d\.]+)\s/],       // for old xmrig
-  [1,       1, /\[[^\]]+\] speed 10s\/60s\/15m [\d\.]+ ([\d\.]+)\s/],        // for new xmrig
-  [1,       1, /\s+miner\s+speed 10s\/60s\/15m [\d\.]+ ([\d\.]+)\s/],        // for xmrig v6+
+  [1,       1, /\[[^\]]+\] speed 10s\/60s\/15m [\d\.n/a]+ ([\d\.]+)\s/],     // for new xmrig
+  [1,       1, /\s+miner\s+speed 10s\/60s\/15m [\d\.n/a]+ ([\d\.]+)\s/],     // for xmrig v6+
   [1,       1, /Totals \(ALL\):\s+[\d\.]+\s+([1-9]\d*\.\d+|0\.[1-9]\d*)\s/], // xmr-stak
   [1,       1, /Total Speed: ([\d\.]+) H\/s,/],                              // claymore
   [1,       1, /\(Avr ([\d\.]+)H\/s\)/],                                     // CryptoDredge
@@ -69,69 +69,87 @@ function algo_hashrate_factor(algo) {
 
 // main algos we bench for
 const bench_algos = [
-  "rx/0",
-  "rx/wow",
-  "defyx",
   "cn/r",
-  "cn-pico/trtl",
+  "cn-lite/1",
   "cn-heavy/xhv",
+  "cn-pico/trtl",
+  "cn/ccx",
   "cn/gpu",
   "argon2/chukwa",
-  "k12",
+  "kawpow",
+  "ghostrider",
+  "astrobwt",
+  "rx/0",
+  "rx/graft",
+  "rx/arq",
+  "panthera",
+  "autolykos2",
+  "c29b",
   "c29s",
   "c29v",
-  "c29b",
-  "kawpow",
   "ethash",
+  "k12",
 ];
 
 // algo and their perf that can be derived from thier main algo perf
 function bench_algo_deps(bench_algo, perf) {
   switch (bench_algo) {
+    case "cn/ccx": return {
+      "cn/ccx":        perf,
+      "cn/0":          perf / 2
+    };
     case "cn/r": return {
-      "cn/0":          perf,
       "cn/1":          perf,
       "cn/2":          perf,
       "cn/r":          perf,
-      "cn/wow":        perf,
+      "cn/rto":        perf,
+      "cn/xao":        perf,
       "cn/fast":       perf * 2,
       "cn/half":       perf * 2,
-      "cn/xao":        perf,
-      "cn/rto":        perf,
       "cn/rwz":        perf / 3 * 4,
       "cn/zls":        perf / 3 * 4,
       "cn/double":     perf / 2,
-    };
-    case "cn/gpu": return {
-      "cn/gpu":        perf,
-    };
-    case "cn-pico/trtl": return {
-      "cn-pico/trtl":  perf,
     };
     case "cn-lite/1": return {
       "cn-lite/0":     perf,
       "cn-lite/1":     perf,
     };
     case "cn-heavy/xhv": return {
-      "cn-heavy/0":    perf,
       "cn-heavy/xhv":  perf,
-      "cn-heavy/tube": perf,
     };
-    case "rx/wow": return {
-      "rx/wow":        perf,
+    case "cn-pico/trtl": return {
+      "cn-pico/trtl":  perf,
     };
-    case "rx/0": return {
-      "rx/0":          perf,
-      "rx/loki":       perf,
-    };
-    case "defyx": return {
-      "defyx":         perf,
+    case "cn/gpu": return {
+      "cn/gpu":        perf,
     };
     case "argon2/chukwa": return {
       "argon2/chukwa": perf,
     };
-    case "k12": return {
-      "k12":           perf,
+    case "astrobwt": return {
+      "astrobwt":      perf,
+    };
+    case "kawpow": return {
+      "kawpow":        perf,
+    };
+    case "rx/0": return {
+      "rx/0":          perf,
+      "rx/sfx":        perf,
+    };
+    case "rx/graft": return {
+      "rx/graft":      perf,
+    };
+    case "rx/arq": return {
+      "rx/arq":        perf,
+    };
+    case "panthera": return {
+      "panthera":      perf,
+    };
+    case "autolykos2": return {
+      "autolykos2":    perf,
+    };
+    case "c29b": return {
+      "c29b":          perf,
     };
     case "c29s": return {
       "c29s":          perf,
@@ -139,14 +157,14 @@ function bench_algo_deps(bench_algo, perf) {
     case "c29v": return {
       "c29v":          perf,
     };
-    case "c29b": return {
-      "c29b":          perf,
-    };
-    case "kawpow": return {
-      "kawpow":        perf,
-    };
     case "ethash": return {
       "ethash":        perf,
+    };
+    case "k12": return {
+      "k12":           perf,
+    };
+    case "ghostrider": return {
+      "ghostrider":    perf,
     };
     default: return {};
   }
@@ -159,26 +177,12 @@ function bench_algo_deps(bench_algo, perf) {
 let console_file = process.cwd() + "/mm.json";
 
 let c = {
+  proc_title: "meta-miner",
   miner_host: "127.0.0.1",
   miner_port: 3333,
   pools: [],
   algos: {},
-  algo_perf: {
-    "rx/0":          0,
-    "cn/r":          0,
-    "cn/gpu":        0,
-    "cn-heavy/xhv":  0,
-    "cn-pico/trtl":  0,
-    "rx/wow":        0,
-    "defyx":         0,
-    "argon2/chukwa": 0,
-    "k12":           0,
-    "c29s":          0,
-    "c29v":          0,
-    "c29b":          0,
-    "kawpow":        0,
-    "ethash":        0,
-  },
+  algo_perf: {},
   algo_min_time: 0,
   user: null,
   pass: null,
@@ -380,6 +384,7 @@ function pool_socket_write(pool_socket, message) {
 let miner_server = net.createServer(function (miner_socket) {
   if (curr_miner_socket) {
     err("Miner server on " + c.miner_host + ":" + c.miner_port + " port is already connected (please make sure you do not have other miner running)");
+    miner_socket.end();
     return;
   }
   if (is_verbose_mode) log("Miner server on " + c.miner_host + ":" + c.miner_port + " port connected from " + miner_socket.remoteAddress);
@@ -731,7 +736,7 @@ function check_miners(smart_miners, miners, cb) {
       };
       miner_get_first_job_cb = function() {};
       miner_subscribe_cb = function(json, miner_socket) {
-        miner_socket_write(miner_socket, json_reply(json, [ [ "mining.notify", "check", "EthereumStratum/1.0.0" ], "00" ] ));
+        miner_socket_write(miner_socket, json_reply(json, [ [ "mining.notify", "check", "EthereumStratum/1.0.0" ], "00", 7 ] ));
       };
       miner_proc = start_miner(cmd, print_messages);
     });
@@ -761,7 +766,7 @@ function check_miners(smart_miners, miners, cb) {
       };
       miner_get_first_job_cb = function() {};
       miner_subscribe_cb = function(json, miner_socket) {
-        miner_socket_write(miner_socket, json_reply(json, [ [ "mining.notify", "check", "EthereumStratum/1.0.0" ], "00" ] ));
+        miner_socket_write(miner_socket, json_reply(json, [ [ "mining.notify", "check", "EthereumStratum/1.0.0" ], "00", 7 ] ));
       };
       miner_proc = start_miner(cmd, print_messages);
     });
@@ -826,11 +831,11 @@ function do_miner_perf_runs(cb) {
               method:   "mining.notify",
               params: [
                 "benchmark1", // job_id
-                "9dbee6903f8adf34d45169beeeeab5dd50fb1a603931068110f200c2b95bce61", // blob
+                "4c38e8a5f7b2944d1e4274635d828519b97bc64a1f1c7896ecdbb139988aa0e8", // blob
                 "accf7d1311da015b8dd41569c845c0ac739f0637707b8a117119fe1b5aeaa011", // seed hash
                 "000000000002bd75000000000000000000000000000000000000000000000000", // target
                 true,
-                1595758,
+                1500000,
                 "1b0290a7",
               ]
             }) + "\n");
@@ -852,6 +857,25 @@ function do_miner_perf_runs(cb) {
                 true,
               ]
             }) + "\n");
+            break;
+
+            case "autolykos2": miner_socket_write(miner_socket, JSON.stringify({
+              jsonrpc:  "2.0",
+              method:   "mining.notify",
+              params: [
+                "benchmark1", // job_id
+                539302,       // height
+                "920b5e8ed76f90e760469f04391ffaef3b5ecf1e1cb9363c449f490bc1564663", // hash
+                "",
+                "",
+                2, // block version
+                "82463468449557216163199121184281840485288878744226428810224501", // target
+                "",
+                true
+              ]
+            }) + "\n");
+            break;
+
           }
           break;
 
@@ -876,7 +900,7 @@ function do_miner_perf_runs(cb) {
         }
       };
       miner_subscribe_cb = function(json, miner_socket) {
-        miner_socket_write(miner_socket, json_reply(json, [ [ "mining.notify", "benchmark", "EthereumStratum/1.0.0" ], "00" ] ));
+        miner_socket_write(miner_socket, json_reply(json, [ [ "mining.notify", "benchmark", "EthereumStratum/1.0.0" ], "00", 7 ] ));
       };
       let nr_prints_needed = -1;
       let nr_prints_found = 0;
@@ -924,6 +948,7 @@ function print_help() {
   console.log("<config_file.json> is file name of config file to load before parsing options (mm.json by default)");
   console.log("Config file and options should define at least one pool and miner:");
   console.log("Options:");
+  console.log("\t--proc_title=<title> (-t):     \t<title> to use as the process.title (default: meta-miner)");
   console.log("\t--pool=<pool> (-p):            \t<pool> is in pool_address:pool_port format, where pool_port can be <port_number> or ssl<port_number>");
   console.log("\t--host=<hostname>:             \tdefines host that will be used for miner connections (localhost 127.0.0.1 by default)");
   console.log("\t--port=<number>:               \tdefines port that will be used for miner connections (3333 by default)");
@@ -970,6 +995,8 @@ function parse_argv(cb) {
     if (m = val.match(/^(?:--?help|-h|-\?)$/)) {
       print_help();
       process.exit(0);
+    } else if (m = val.match(/^(?:--proc_title|-t)=(.+)$/)) {
+      c.proc_title = m[1];
     } else if (m = val.match(/^(?:--quiet|-q)$/)) {
       is_quiet_mode = true;
     } else if (m = val.match(/^(?:--verbose|-v)$/)) {
@@ -1093,7 +1120,9 @@ function main() {
           break;
 
         case "eth":
-          if (curr_pool_last_target) miner_socket_write(miner_socket, JSON.stringify(curr_pool_last_target) + "\n");
+          if (curr_pool_last_target && curr_algo != "autolykos2") {
+            miner_socket_write(miner_socket, JSON.stringify(curr_pool_last_target) + "\n");
+          }
           miner_socket_write(miner_socket, JSON.stringify({
             jsonrpc: "2.0",
             method:  "mining.notify",
@@ -1160,6 +1189,7 @@ function main() {
   connect_pool(curr_pool_num = 0, pool_ok, pool_new_msg, pool_err);
 };
 
+process.title = 'meta-miner';
 log("Meta Miner " + VERSION);
 
 parse_argv(function() {
@@ -1173,5 +1203,6 @@ parse_argv(function() {
     process.exit(1);
   }
 
+  if(process.title !== c.proc_title) process.title = c.proc_title;
   do_miner_perf_runs(main);
 });

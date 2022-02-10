@@ -16,7 +16,7 @@ Options:
         --port=<number>:                defines port that will be used for miner connections (3333 by default)
         --user=<wallet> (-u):           <wallet> to use as pool user login (will be taken from the first miner otherwise)
         --pass=<miner_id>:              <miner_id> to use as pool pass login (will be taken from the first miner otherwise)
-        --perf_<algo>=<hashrate>        Sets hashrate for algo that is: rx/0, rx/wow, defyx, cn/r, cn-pico/trtl, cn-heavy/xhv, cn/gpu, argon2/chukwa, k12, c29s, c29v, c29b, kawpow, ethash
+        --perf_<algo>=<hashrate>        Sets hashrate for algo that is: rx/0, rx/wow, cn/r, cn-pico/trtl, cn-heavy/xhv, cn/gpu, argon2/chukwa, k12, c29s, c29v, c29b, kawpow, ethash, autolykos2, panthera, ghostrider
         --algo_min_time=<seconds>       Sets <seconds> minimum time pool should keep our miner on one algo (0 default, set higher for starting miners)
         --miner=<command_line> (-m):    <command_line> to start smart miner that can report algo itself
         --<algo>=<command_line>:        <command_line> to start miner for <algo> that can not report it itself
@@ -65,11 +65,13 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
   "rx/sfx": "./xmrig --config=config.json",
   "argon2/chukwa": "./xmrig --config=config.json",
   "argon2/wrkz": "./xmrig --config=config.json",
+  "ghostrider": "./xmrig --config=config.json",
   "ethash": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo ethash --proto stratum",
   "kawpow": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo kawpow",
   "c29s": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckaroo29s",
   "c29b": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckaroo29b",
-  "c29v": "./gminer39/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckarood29"
+  "c29v": "./gminer39/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckarood29",
+  "autolykos2": "./trex/t-rex -a autolykos2 -o stratum+tcp://localhost:3333 -u 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV -p gpu_miner"
  },
  "algo_perf": {
   "rx/0": 243.6,
@@ -101,7 +103,9 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
   "c29s": 0.23375,
   "c29v": 0.4875,
   "kawpow": 0.003953464329242706,
-  "ethash": 49860000
+  "ethash": 49860000,
+  "autolykos2": 144120000,
+  "ghostrider": 1000
  },
  "algo_min_time": 0,
  "user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV",
@@ -189,7 +193,7 @@ sed -i 's/"user": *"[^"]*",/"user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6
 
 ## Developer Donations
 
-If you'd like to make a one time donation, the addresses are as follows:
+If you'd like to make an one time donation, the addresses are as follows:
 
 * XMR - ```43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV```
 * BTC - ```3Q4QT5WKMzCh4WqsGF2nKxc8XoLuLLuMqk```
