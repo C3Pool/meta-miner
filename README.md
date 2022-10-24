@@ -40,7 +40,7 @@ Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-alg
  "miner_host": "127.0.0.1",
  "miner_port": 3333,
  "pools": [
-  "mine.c3pool.com:13333"
+  "auto.c3pool.org:19999"
  ],
  "algos": {
   "cn/1": "./xmrig --config=config.json",
@@ -154,7 +154,7 @@ Place mm.exe or mm.js (with nodejs installed) into unpacked miner directory eith
 * Run Meta Miner (or use "node mm.js" instead of mm.exe):
 
 ```shell
-mm.exe -p=mine.c3pool.com:13333 -m="xmrig-amd.exe --config=config.json"
+mm.exe -p=auto.c3pool.org:19999 -m="xmrig-amd.exe --config=config.json"
 ```
 
 ## Usage examples on Linux (Ubuntu 18.04)
@@ -188,7 +188,7 @@ sed -i 's/"user": *"[^"]*",/"user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6
 * Run Meta Miner:
 
 ```shell
-./mm.js -p=mine.c3pool.com:13333 -m="./xmrig --config=config.json"
+./mm.js -p=auto.c3pool.org:19999 -m="./xmrig --config=config.json"
 ```
 
 ## Developer Donations
@@ -196,5 +196,3 @@ sed -i 's/"user": *"[^"]*",/"user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6
 If you'd like to make an one time donation, the addresses are as follows:
 
 * XMR - ```43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV```
-* BTC - ```3Q4QT5WKMzCh4WqsGF2nKxc8XoLuLLuMqk```
-* ETH - ```0x127a48f0A13d347215184720314de4d009509D38```

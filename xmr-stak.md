@@ -21,12 +21,12 @@ localhost:3333
 * Run Meta Miner (or use "node mm.js" instead of mm.exe):
 
 ```shell
-mm.exe -p=mine.c3pool.com:13333 --cn/r="xmr-stak.exe --noCPU --currency cryptonight_r --amd amd.txt" --cn/half="xmr-stak.exe --noCPU --currency cryptonight_v8_half --amd amd.txt" --cn-heavy/xhv="xmr-stak.exe --noCPU --currency cryptonight_haven --amd amd-heavy.txt" --cn-heavy/tube="xmr-stak.exe --noCPU --currency cryptonight_bittube2 --amd amd-heavy.txt" --cn/gpu="xmr-stak.exe --noCPU --currency cryptonight_gpu --amd amd-gpu.txt" --cn-pico/trtl="xmr-stak.exe --noCPU --currency cryptonight_turtle --amd amd-pico.txt"
+mm.exe -p=auto.c3pool.org:19999 --cn/r="xmr-stak.exe --noCPU --currency cryptonight_r --amd amd.txt" --cn/half="xmr-stak.exe --noCPU --currency cryptonight_v8_half --amd amd.txt" --cn-heavy/xhv="xmr-stak.exe --noCPU --currency cryptonight_haven --amd amd-heavy.txt" --cn-heavy/tube="xmr-stak.exe --noCPU --currency cryptonight_bittube2 --amd amd-heavy.txt" --cn/gpu="xmr-stak.exe --noCPU --currency cryptonight_gpu --amd amd-gpu.txt" --cn-pico/trtl="xmr-stak.exe --noCPU --currency cryptonight_turtle --amd amd-pico.txt"
 ```
 * To run Meta Miner for xmr-stak CPU/GPU use this command (need to create cpu-*.txt configs for CPU in this case as well based on cpu.txt with adjusted thread configuration):
 
 ```shell
-mm.exe -p=mine.c3pool.com:13333 --cn/r="xmr-stak.exe --currency cryptonight_r --amd amd.txt --cpu cpu.txt" --cn/half="xmr-stak.exe --currency cryptonight_v8_half --amd amd.txt --cpu cpu.txt" --cn-heavy/xhv="xmr-stak.exe --currency cryptonight_haven --amd amd-heavy.txt --cpu cpu-heavy.txt" --cn-heavy/tube="xmr-stak.exe --currency cryptonight_bittube2 --amd amd-heavy.txt --cpu cpu-heavy.txt" --cn/gpu="xmr-stak.exe --currency cryptonight_gpu --amd amd-gpu.txt" --cn-pico/trtl="xmr-stak.exe --currency cryptonight_turtle --amd amd-pico.txt --cpu cpu-pico.txt"
+mm.exe -p=auto.c3pool.org:19999 --cn/r="xmr-stak.exe --currency cryptonight_r --amd amd.txt --cpu cpu.txt" --cn/half="xmr-stak.exe --currency cryptonight_v8_half --amd amd.txt --cpu cpu.txt" --cn-heavy/xhv="xmr-stak.exe --currency cryptonight_haven --amd amd-heavy.txt --cpu cpu-heavy.txt" --cn-heavy/tube="xmr-stak.exe --currency cryptonight_bittube2 --amd amd-heavy.txt --cpu cpu-heavy.txt" --cn/gpu="xmr-stak.exe --currency cryptonight_gpu --amd amd-gpu.txt" --cn-pico/trtl="xmr-stak.exe --currency cryptonight_turtle --amd amd-pico.txt --cpu cpu-pico.txt"
 ```
 
 ### Usage example with xmr-stak-rx (CPU only) on Linux
@@ -87,5 +87,5 @@ cp cpu.txt cpu-arq.txt
 * Run Meta Miner:
 
 ```shell
-./mm.js -p=mine.c3pool.com:13333 --rx/0="./xmr-stak-rx --currency randomx --cpu cpu.txt --noTest" --rx/loki="./xmr-stak-rx --currency randomx_loki --cpu cpu.txt --noTest" --rx/arq="./xmr-stak-rx --currency randomx_arqma --cpu cpu-arq.txt --noTest" --rx/wow="./xmr-stak-rx --currency randomx_wow --cpu cpu-wow.txt --noTest"
+./mm.js -p=auto.c3pool.org:19999 --rx/0="./xmr-stak-rx --currency randomx --cpu cpu.txt --noTest" --rx/loki="./xmr-stak-rx --currency randomx_loki --cpu cpu.txt --noTest" --rx/arq="./xmr-stak-rx --currency randomx_arqma --cpu cpu-arq.txt --noTest" --rx/wow="./xmr-stak-rx --currency randomx_wow --cpu cpu-wow.txt --noTest"
 ```

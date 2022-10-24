@@ -3,7 +3,7 @@
 // Meta Miner: adding algo switching support to *any* stratum miner
 // Algo switching is supported by https://c3pool.com mining pool
 
-// Copyright 2019 C3Pool <https://github.com/C3Pool>, <support@c3pool.com>
+// Copyright 2018 C3Pool <https://github.com/C3Pool>, <support@C3Pool.com>
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ const child_process = require('child_process');
 // *** CONSTS                                                                ***
 // *****************************************************************************
 
-const VERSION      = "v4.4";
+const VERSION      = "v4.5";
 const DEFAULT_ALGO = "rx/0"; // this is algo that is assumed to be sent by pool if its job does not contain algo stratum extension
 const AGENT        = "Meta Miner " + VERSION;
 
@@ -88,6 +88,7 @@ const bench_algos = [
   "c29s",
   "c29v",
   "ethash",
+  "etchash",
   "k12",
 ];
 
@@ -159,6 +160,9 @@ function bench_algo_deps(bench_algo, perf) {
     };
     case "ethash": return {
       "ethash":        perf,
+    };
+    case "etchash": return {
+      "etchash":       perf,
     };
     case "k12": return {
       "k12":           perf,
@@ -841,7 +845,8 @@ function do_miner_perf_runs(cb) {
             }) + "\n");
             break;
 
-            case "ethash": miner_socket_write(miner_socket, JSON.stringify({
+            case "ethash":
+            case "etchash": miner_socket_write(miner_socket, JSON.stringify({
               jsonrpc:  "2.0",
               method:   "mining.set_difficulty",
               params: [
