@@ -29,6 +29,7 @@ describe("fake-pool integration", { concurrency: false }, () => {
       const login = await pool.login;
       assert.equal(login.method, "login");
       assert.ok(login.params.algo.includes("rx/0"));
+      assert.deepEqual(login.params.extensions, ["mo-native"]);
       const submit = await pool.submit;
       assert.equal(submit.method, "submit");
     } finally {

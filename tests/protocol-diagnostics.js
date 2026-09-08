@@ -8,7 +8,7 @@ const { describe, it } = require("node:test");
 
 const { createDefaultConfig } = require("../src/config");
 const { formatDiagnostics, validateConfig } = require("../src/diagnostics");
-const { detectMinerProtocol, ethProxyWork, isEthProxyWorkResult } = require("../src/protocol");
+const { detectMinerProtocol, ethProxySubmit, ethProxyWork, isEthProxyWorkResult } = require("../src/protocol");
 const { MultiMinerApp } = require("../mm");
 const { ethNotifyParams, silentLogger } = require("./common/helpers");
 
@@ -60,6 +60,12 @@ describe("protocol and diagnostics", () => {
     assert.equal(poolWrites[0].params[1], "job1");
   });
 
+  it("preserves an optional final hash on translated ETH proxy submits", () => {
+    const submit = ethProxySubmit({ id: 3, params: ["0x00", "0xheader", "0xmix"], result: "a".repeat(64) }, "wallet", ["job1"]);
+    assert.equal(submit.result, "a".repeat(64));
+    assert.deepEqual(submit.params, ["wallet", "job1", "0x00", "0xheader", "0xmix"]);
+  });
+
   it("sends object jobs as standard job pushes for subscribe/authorize miners", () => {
     const app = ethProxyApp("mm-eth-standard-");
     const minerWrites = [];
@@ -74,6 +80,129 @@ describe("protocol and diagnostics", () => {
     app.sendFirstJob({ id: 2, jsonrpc: "2.0", method: "mining.authorize", params: ["wallet", "x"] }, jsonSink(minerWrites));
 
     assert.deepEqual(minerWrites[0], { jsonrpc: "2.0", method: "job", params: app.currPoolLastJob });
+  });
+
+  it("carries pool login nonce metadata into a cached object login reply", () => {
+    const app = ethProxyApp("mm-object-metadata-");
+    const minerWrites = [];
+    app.minerServer.protocol = "default";
+    app.currPoolLoginResult = {
+      id: "pool-miner",
+      status: "OK",
+      extensions: ["mo-native"],
+      extra_nonce: "abcd",
+      extra_nonce2_size: 4,
+    };
+    app.currPoolLastJob = { algo: "rx/0", blob: "00", job_id: "job1", target: "ffffffff" };
+
+    app.sendFirstJob({ id: 2, method: "login" }, jsonSink(minerWrites));
+
+    assert.deepEqual(minerWrites[0].result.extensions, ["mo-native"]);
+    assert.equal(minerWrites[0].result.extra_nonce, "abcd");
+    assert.equal(minerWrites[0].result.extra_nonce2_size, 4);
+  });
+
+  it("uses current native nonce metadata and keeps the array job inside notify", () => {
+    const app = ethProxyApp("mm-native-object-login-");
+    const minerWrites = [];
+    app.minerServer.protocol = "default";
+    app.currPoolMinerId = "pool-miner";
+    app.currAlgo = "kawpow";
+    app.currPoolJobAlgo = "kawpow";
+    app.currPoolLoginResult = {
+      id: "pool-miner",
+      extensions: ["mo-native"],
+      extra_nonce: "old-prefix",
+      extra_nonce2_size: 4,
+    };
+    app.currPoolLastExtraNonce = { jsonrpc: "2.0", method: "mining.set_extranonce", params: ["new-prefix", 5] };
+    app.currPoolExtraNonceAlgo = "kawpow";
+    app.currPoolLastTarget = { jsonrpc: "2.0", method: "mining.set_difficulty", params: [2] };
+    app.currPoolLastJob = ethNotifyParams("kawpow-job");
+
+    app.sendFirstJob({ id: 2, method: "login", params: { extensions: ["mo-native"] } }, jsonSink(minerWrites));
+
+    assert.equal(minerWrites[0].result.id, "pool-miner");
+    assert.equal(minerWrites[0].result.algo, "kawpow");
+    assert.equal(minerWrites[0].result.extra_nonce, "new-prefix");
+    assert.equal(minerWrites[0].result.extra_nonce2_size, 5);
+    assert.deepEqual(minerWrites[0].result.extensions, ["mo-native"]);
+    assert.equal("job" in minerWrites[0].result, false);
+    assert.deepEqual(minerWrites[1].params, ["new-prefix", 5]);
+    assert.equal(minerWrites[1].algo, "kawpow");
+    assert.equal(minerWrites[2].method, "mining.set_difficulty");
+    assert.equal(minerWrites[2].algo, "kawpow");
+    assert.deepEqual(minerWrites[3].params, app.currPoolLastJob);
+    assert.equal(minerWrites[3].algo, "kawpow");
+  });
+
+  it("rejects a native array job for an object child without mo-native", () => {
+    const app = ethProxyApp("mm-native-object-legacy-");
+    const minerWrites = [];
+    app.minerServer.protocol = "default";
+    app.currAlgo = "kawpow";
+    app.currPoolJobAlgo = "kawpow";
+    app.currPoolLastJob = ethNotifyParams("kawpow-job");
+
+    app.sendFirstJob({ id: 2, method: "login", params: {} }, jsonSink(minerWrites));
+
+    assert.equal(minerWrites.length, 1);
+    assert.equal(minerWrites[0].id, 2);
+    assert.match(minerWrites[0].error, /mo-native/);
+  });
+
+  it("filters a native pool job from an already connected legacy object child", () => {
+    const app = ethProxyApp("mm-native-object-switch-");
+    const minerWrites = [];
+    app.minerServer.protocol = "default";
+    app.minerServer.socket = jsonSink(minerWrites);
+    app.currMiner = "miner --kawpow";
+    app.config.algos = { kawpow: app.currMiner };
+    app.currMinerSupportsMoNative = false;
+
+    app.poolNewMsg({ jsonrpc: "2.0", method: "mining.notify", algo: "kawpow", params: ethNotifyParams("kawpow-job") });
+
+    assert.equal(minerWrites.length, 0);
+  });
+
+  it("keeps an unmarked target pending for the next family job", () => {
+    const app = ethProxyApp("mm-target-pending-");
+    const target = { jsonrpc: "2.0", method: "mining.set_difficulty", params: [2] };
+    app.currPoolJobAlgo = "rx/0";
+    app.currPoolTargetAlgo = "rx/0";
+    app.currPoolLastTarget = { jsonrpc: "2.0", method: "mining.set_difficulty", algo: "rx/0", params: [1] };
+    app.recordPoolMessage(target);
+    app.recordPoolMessage({ jsonrpc: "2.0", method: "mining.notify", algo: "kawpow", params: ethNotifyParams("kawpow-job") });
+
+    assert.equal(app.currPoolLastTarget, target);
+    assert.equal(app.currPoolTargetAlgo, "kawpow");
+    assert.equal(app.currPoolTargetPending, false);
+  });
+
+  it("drops a marked target when the following job belongs to another family", () => {
+    const app = ethProxyApp("mm-target-family-");
+    const target = { jsonrpc: "2.0", method: "mining.set_difficulty", algo: "rx/0", params: [1] };
+    app.currPoolJobAlgo = "rx/0";
+    app.recordPoolMessage(target);
+    app.recordPoolMessage({ jsonrpc: "2.0", method: "mining.notify", algo: "kawpow", params: ethNotifyParams("kawpow-job") });
+
+    assert.equal(app.currPoolLastTarget, null);
+  });
+
+  it("replays a cached nonce prefix before the first native notify", () => {
+    const app = ethProxyApp("mm-native-prefix-");
+    const minerWrites = [];
+    app.minerServer.protocol = "eth";
+    app.currAlgo = "kawpow";
+    app.currPoolLastTarget = null;
+    app.currPoolLastExtraNonce = { jsonrpc: "2.0", method: "mining.set_extranonce", params: ["abcd", 4] };
+    app.currPoolLastJob = ethNotifyParams("kawpow-job");
+
+    app.sendFirstJob({ id: 2, method: "mining.authorize" }, jsonSink(minerWrites));
+
+    assert.equal(minerWrites[0].method, "mining.set_extranonce");
+    assert.equal(minerWrites[0].algo, "kawpow");
+    assert.equal(minerWrites[1].method, "mining.notify");
   });
 
   it("sends cached autolykos difficulty before first notify", () => {

@@ -19,6 +19,7 @@ describe("pool client", () => {
     assert.deepEqual(params.algo, ["kawpow1", "rx/0"]);
     assert.equal(params["algo-perf"].kawpow1, 20882200);
     assert.equal("kawpow" in params["algo-perf"], false);
+    assert.deepEqual(params.extensions, ["mo-native"]);
   });
 
   it("preserves legacy saved KawPow performance and capability names", () => {
@@ -33,6 +34,7 @@ describe("pool client", () => {
     assert.deepEqual(params.algo, ["kawpow"]);
     assert.equal(params["algo-perf"].kawpow, 0.01);
     assert.equal("kawpow1" in params["algo-perf"], false);
+    assert.deepEqual(params.extensions, ["mo-native"]);
   });
 
   it("fails over exactly once when the pool gracefully closes after login", async () => {

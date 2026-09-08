@@ -24,6 +24,10 @@ function poolLoginParams(config, agent) {
     algo: algos,
     "algo-perf": algoPerf,
     "algo-min-time": config.algo_min_time,
+    // MoneroOcean's object job dialect is negotiated independently of the legacy
+    // login fields.  Multi-Miner cannot promise a final hash because its child
+    // miner may only return the legacy share fields.
+    extensions: ["mo-native"],
   };
 }
 

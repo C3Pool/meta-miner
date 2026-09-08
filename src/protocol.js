@@ -47,12 +47,16 @@ function isEthProxyWorkResult(json) {
 function ethProxySubmit(json, user, job) {
   const params = Array.isArray(json.params) ? json.params : [];
   const jobId = Array.isArray(job) && job[0] ? job[0] : "job";
-  return {
+  const submit = {
     id: json.id,
     jsonrpc: "2.0",
     method: "mining.submit",
     params: [user || "", jobId, params[0] || "0x0", params[1] || "0x0", params[2] || "0x0"],
   };
+  // Preserve the optional negotiated final-hash field when a child protocol
+  // supplies one.  Legacy ethproxy submits have no such field.
+  if (typeof json.result === "string") submit.result = json.result;
+  return submit;
 }
 
 function ethProxySubmitHeader(json) {

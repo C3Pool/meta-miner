@@ -15,7 +15,7 @@ const { startMiner, treeKill } = require("./src/process-manager");
 const { stringifyLine } = require("./src/json-lines");
 const { startWatchdogs: startWatchdogTimers } = require("./src/watchdogs");
 
-const VERSION = "v5.0";
+const VERSION = "v5.1";
 const AGENT = `Multi-Miner ${  VERSION}`;
 
 // Auto-restart backoff for an unexpectedly-closed miner so a persistently-failing miner doesn't
@@ -36,6 +36,14 @@ class MultiMinerApp {
     this.currPoolLastJob = null;
     this.currPoolMinerId = null;
     this.currPoolLastTarget = null;
+    this.currPoolJobAlgo = null;
+    this.currPoolLoginResult = null;
+    this.currPoolTargetAlgo = null;
+    this.currPoolTargetPending = false;
+    this.currPoolLastExtraNonce = null;
+    this.currPoolExtraNonceAlgo = null;
+    this.currPoolExtraNoncePending = false;
+    this.currMinerSupportsMoNative = false;
     this.ethProxyWork = createEthProxyWorkTracker();
     this.pendingEthFirstJob = this.pendingEthSubscribeId = this.pendingEthFirstJobTimer = null;
     this.delayNextEthFirstJob = false;
@@ -195,6 +203,7 @@ class MultiMinerApp {
       this.logger.log(`Pool (${  this.poolLabel()  }) <-> miner link was established due to new miner connection`);
     }
     const protocol = detectMinerProtocol(json);
+    this.currMinerSupportsMoNative = protocol === "default" && this.hasMinerExtension(json, "mo-native");
     this.minerServer.setCurrent(socket, protocol);
     if (protocol === "ethproxy") this.ethProxyWork.clear();
     if (protocol === "grin") this.minerServer.write(socket, grinJsonReply("login", "ok"));
@@ -212,6 +221,8 @@ class MultiMinerApp {
     if (this.minerServer.protocol === "eth") {
       if (this.pendingEthSubscribeId !== null || this.delayNextEthFirstJob) { this.pendingEthFirstJob = { json, socket }; this.schedulePendingEthFirstJob(); return; }
       if (Array.isArray(this.currPoolLastJob)) {
+        const extraNonce = this.currentPoolExtraNonce();
+        if (extraNonce) this.minerServer.write(socket, stringifyLine(this.poolControlForCurrentAlgo(extraNonce)));
         if (this.shouldSendEthTarget()) this.minerServer.write(socket, stringifyLine(this.currPoolLastTarget));
         this.minerServer.write(socket, stringifyLine({ jsonrpc: "2.0", method: "mining.notify", algo: this.currAlgo, params: this.currPoolLastJob }));
       } else this.minerServer.write(socket, stringifyLine({ jsonrpc: "2.0", method: "job", params: this.currPoolLastJob }));
@@ -223,9 +234,79 @@ class MultiMinerApp {
       this.minerServer.write(socket, jsonReply(json, work));
       return;
     }
-    const reply = { jsonrpc: "2.0", error: null, result: { id: this.currPoolMinerId, job: this.currPoolLastJob, status: "OK" } };
+    if (Array.isArray(this.currPoolLastJob)) {
+      if (json && json.method === "login") this.currMinerSupportsMoNative = this.hasMinerExtension(json, "mo-native");
+      if (!this.currMinerSupportsMoNative) {
+        this.rejectUnsupportedNativeJob(json, socket);
+        return;
+      }
+      this.sendNativeObjectFirstJob(json, socket);
+      return;
+    }
+    const loginResult = this.currPoolLoginResult && typeof this.currPoolLoginResult === "object"
+      ? Object.assign({}, this.currPoolLoginResult) : {};
+    const extraNonce = this.currentPoolExtraNonce();
+    if (extraNonce && Array.isArray(extraNonce.params)) {
+      if (extraNonce.params.length > 0) loginResult.extra_nonce = extraNonce.params[0];
+      if (extraNonce.params.length > 1) loginResult.extra_nonce2_size = extraNonce.params[1];
+    }
+    const reply = { jsonrpc: "2.0", error: null, result: Object.assign(loginResult, {
+      id: this.currPoolMinerId,
+      job: this.currPoolLastJob,
+      status: "OK",
+    }) };
     if ("id" in json) reply.id = json.id;
     this.minerServer.write(socket, stringifyLine(reply));
+  }
+
+  hasMinerExtension(json, extension) {
+    const params = json && json.params;
+    return Boolean(params && Array.isArray(params.extensions) && params.extensions.includes(extension));
+  }
+
+  currentPoolExtraNonce() {
+    const algo = this.currAlgo || this.currPoolJobAlgo;
+    if (algo && this.currPoolExtraNonceAlgo && this.currPoolExtraNonceAlgo !== algo) return null;
+    return this.currPoolLastExtraNonce;
+  }
+
+  rejectUnsupportedNativeJob(json, socket) {
+    this.logger.err(`Native pool job requires the miner's mo-native extension`);
+    this.minerServer.write(socket, jsonError(json, "Native pool job requires mo-native extension"));
+    if (socket && typeof socket.end === "function") socket.end();
+    if (this.minerServer.socket === socket) this.minerServer.setCurrent(null);
+  }
+
+  sendNativeObjectFirstJob(json, socket) {
+    const poolLogin = this.currPoolLoginResult && typeof this.currPoolLoginResult === "object"
+      ? this.currPoolLoginResult : {};
+    const result = {
+      id: this.currPoolMinerId || poolLogin.id,
+      algo: this.currAlgo || this.currPoolJobAlgo,
+      extensions: ["mo-native"],
+      status: "OK",
+    };
+    const extraNonce = this.currentPoolExtraNonce();
+    if (extraNonce && Array.isArray(extraNonce.params)) {
+      if (extraNonce.params.length > 0) result.extra_nonce = extraNonce.params[0];
+      if (extraNonce.params.length > 1) result.extra_nonce2_size = extraNonce.params[1];
+    } else {
+      if (poolLogin.extra_nonce !== undefined) result.extra_nonce = poolLogin.extra_nonce;
+      if (poolLogin.extra_nonce2_size !== undefined) result.extra_nonce2_size = poolLogin.extra_nonce2_size;
+    }
+    const reply = { jsonrpc: "2.0", error: null, result };
+    if (json && "id" in json) reply.id = json.id;
+    this.minerServer.write(socket, stringifyLine(reply));
+    if (extraNonce) this.minerServer.write(socket, stringifyLine(this.poolControlForCurrentAlgo(extraNonce)));
+    if (this.currPoolLastTarget) this.minerServer.write(socket, stringifyLine(this.poolControlForCurrentAlgo(this.currPoolLastTarget)));
+    this.minerServer.write(socket, stringifyLine({ jsonrpc: "2.0", method: "mining.notify", algo: result.algo, params: this.currPoolLastJob }));
+  }
+
+  poolControlForCurrentAlgo(message) {
+    const algo = this.currAlgo || this.currPoolJobAlgo;
+    if (!message || typeof message !== "object") return message;
+    if (message.algo || algo == null) return message;
+    return Object.assign({}, message, { algo });
   }
 
   handleMinerSubscribe(json, socket) {
@@ -310,6 +391,10 @@ class MultiMinerApp {
       if (!("method" in json) && "id" in json) this.minerServer.write(this.minerServer.socket, stringifyLine(json));
       return;
     }
+    if (this.minerServer.protocol === "default" && Array.isArray(this.currPoolLastJob) && !this.currMinerSupportsMoNative) {
+      this.logger.err(`Ignoring native ${  nextJobAlgo  } job because the connected miner did not negotiate mo-native`);
+      return;
+    }
     this.minerServer.write(this.minerServer.socket, stringifyLine(json));
     if (json.id === this.pendingEthSubscribeId) { this.pendingEthSubscribeId = null; this.schedulePendingEthFirstJob(); }
   }
@@ -350,6 +435,14 @@ class MultiMinerApp {
     this.currPoolLastJob = null;
     this.currPoolMinerId = null;
     this.currPoolLastTarget = null;
+    this.currPoolJobAlgo = null;
+    this.currPoolLoginResult = null;
+    this.currPoolTargetAlgo = null;
+    this.currPoolTargetPending = false;
+    this.currPoolLastExtraNonce = null;
+    this.currPoolExtraNonceAlgo = null;
+    this.currPoolExtraNoncePending = false;
+    this.currMinerSupportsMoNative = false;
     this.ethProxyWork.clear();
     this.currPoolNum++;
     if (this.currPoolNum >= this.config.pools.length) {
