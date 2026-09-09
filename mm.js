@@ -9,7 +9,7 @@ const { Logger } = require("./src/logger");
 const { checkMiners } = require("./src/miner-check");
 const { MinerServer } = require("./src/miner-server");
 const { connectPool, writePoolSocket } = require("./src/pool-client");
-const { createEthProxyWorkTracker, detectMinerProtocol, ethProxySubmit, ethProxyWork, grinJsonReply, isEthProxyWorkResult, jsonError, jsonReply } = require("./src/protocol");
+const { createEthProxyWorkTracker, detectMinerProtocol, ethProxySubmit, ethProxyWork, formatMinerReply, grinJsonReply, isEthProxyWorkResult, jsonError, jsonReply } = require("./src/protocol");
 const { forwardGrinPoolMessage: forwardGrinMessage, recordPoolMessage: recordPoolState } = require("./src/pool-state");
 const { startMiner, treeKill } = require("./src/process-manager");
 const { stringifyLine } = require("./src/json-lines");
@@ -44,8 +44,13 @@ class MultiMinerApp {
     this.currPoolExtraNonceAlgo = null;
     this.currPoolExtraNoncePending = false;
     this.currMinerSupportsMoNative = false;
+    this.currMinerBooleanSubmit = false;
+    // Pool request IDs are monotonic so delayed replies cannot be mistaken for a replacement child.
+    this.pendingMinerRequests = new Map();
+    this.nextMinerRequestId = 2;
     this.ethProxyWork = createEthProxyWorkTracker();
     this.pendingEthFirstJob = this.pendingEthSubscribeId = this.pendingEthFirstJobTimer = null;
+    this.pendingMinerFirstJob = null;
     this.delayNextEthFirstJob = false;
     this.currPoolNum = 0;
     this.currMiner = null;
@@ -193,6 +198,7 @@ class MultiMinerApp {
     this.minerServer.setHandlers({
       login: (json, socket) => this.handleMinerLogin(json, socket),
       firstJob: (json, socket) => this.sendFirstJob(json, socket),
+      forward: (json, socket) => this.forwardMinerRequest(json, socket),
       subscribe: (json, socket) => this.handleMinerSubscribe(json, socket),
       extranonceSubscribe: (json, socket) => this.handleMinerExtranonceSubscribe(json, socket),
       submitWork: (json, socket) => this.handleEthProxySubmit(json, socket),
@@ -204,6 +210,11 @@ class MultiMinerApp {
     }
     const protocol = detectMinerProtocol(json);
     this.currMinerSupportsMoNative = protocol === "default" && this.hasMinerExtension(json, "mo-native");
+    const params = json && json.params && typeof json.params === "object" ? json.params : {};
+    // Plain C29 clients omit advertised algo/algo-perf fields; capability-advertising clients use object ACKs.
+    this.currMinerBooleanSubmit = protocol === "default" && !this.currMinerSupportsMoNative &&
+      !Object.prototype.hasOwnProperty.call(params, "algo") &&
+      !Object.prototype.hasOwnProperty.call(params, "algo-perf");
     this.minerServer.setCurrent(socket, protocol);
     if (protocol === "ethproxy") this.ethProxyWork.clear();
     if (protocol === "grin") this.minerServer.write(socket, grinJsonReply("login", "ok"));
@@ -212,6 +223,11 @@ class MultiMinerApp {
   sendFirstJob(json, socket) {
     if (!this.currPoolLastJob) {
       this.logger.err(`No pool (${  this.poolLabel()  }) job to send to the miner!`);
+      return;
+    }
+    if (this.hasPendingJobControls()) {
+      // Wait for the next job to bind future controls, so they cannot pair with this cached job.
+      this.pendingMinerFirstJob = { json, socket };
       return;
     }
     if (this.minerServer.protocol === "grin") {
@@ -264,6 +280,13 @@ class MultiMinerApp {
     return Boolean(params && Array.isArray(params.extensions) && params.extensions.includes(extension));
   }
 
+  hasPendingJobControls() {
+    const activeAlgo = this.currAlgo || this.currPoolJobAlgo;
+    return this.currPoolTargetPending || this.currPoolExtraNoncePending ||
+      (this.currPoolLastTarget && this.currPoolTargetAlgo != null && this.currPoolTargetAlgo !== activeAlgo) ||
+      (this.currPoolLastExtraNonce && this.currPoolExtraNonceAlgo != null && this.currPoolExtraNonceAlgo !== activeAlgo);
+  }
+
   currentPoolExtraNonce() {
     const algo = this.currAlgo || this.currPoolJobAlgo;
     if (algo && this.currPoolExtraNonceAlgo && this.currPoolExtraNonceAlgo !== algo) return null;
@@ -305,8 +328,15 @@ class MultiMinerApp {
   poolControlForCurrentAlgo(message) {
     const algo = this.currAlgo || this.currPoolJobAlgo;
     if (!message || typeof message !== "object") return message;
-    if (message.algo || algo == null) return message;
-    return Object.assign({}, message, { algo });
+    // MO-native carries an explicit nonce width; standard ETH/KawPow children infer it.
+    // Keep the pool's prefix intact and retain Ergo/native-object width metadata.
+    let adjustedMessage = message;
+    if (this.minerServer.protocol === "eth" && (algo === "etchash" || algo === "kawpow") &&
+        message.method === "mining.set_extranonce" && Array.isArray(message.params)) {
+      adjustedMessage = Object.assign({}, message, { params: message.params.slice(0, 1) });
+    }
+    if (adjustedMessage.algo || algo == null) return adjustedMessage;
+    return Object.assign({}, adjustedMessage, { algo });
   }
 
   handleMinerSubscribe(json, socket) {
@@ -317,15 +347,37 @@ class MultiMinerApp {
     if (this.currPoolSocket) {
       this.minerServer.setCurrent(socket, "eth");
       this.pendingEthFirstJob = null;
-      this.pendingEthSubscribeId = json.id;
       this.delayNextEthFirstJob = true;
-      this.writePool(json);
+      this.pendingEthSubscribeId = this.forwardMinerRequest(json, socket);
       return;
     }
     this.logger.err(`No active pool (${  this.poolLabel()  }) to send subscribe job to the miner!`);
     this.minerServer.write(socket, jsonError(json, "No active Multi-Miner pool"));
   }
   handleMinerExtranonceSubscribe(json, socket) { this.minerServer.write(socket, jsonReply(json, true)); if (this.minerServer.protocol === "eth") this.schedulePendingEthFirstJob(); }
+
+  forwardMinerRequest(json, socket) {
+    if (!json || typeof json !== "object" || this.minerServer.socket !== socket || !this.currPoolSocket) return null;
+    const hasId = Object.prototype.hasOwnProperty.call(json, "id");
+    let message = json;
+    let upstreamId = null;
+    if (hasId) {
+      upstreamId = this.nextMinerRequestId++;
+      this.pendingMinerRequests.set(upstreamId, {
+        originalId: json.id,
+        socket,
+        protocol: this.minerServer.protocol,
+        algo: this.currAlgo || this.currPoolJobAlgo,
+        booleanSubmit: this.currMinerBooleanSubmit,
+        method: json.method,
+      });
+      message = Object.assign({}, json, { id: upstreamId });
+    }
+    this.writePool(message);
+    if (json.method === "submit" || json.method === "mining.submit") this.minerServer.onSubmit();
+    return upstreamId;
+  }
+
   handleEthProxySubmit(json, socket) {
     if (!this.currPoolSocket) {
       this.logger.err(`Dropping ETH proxy submitWork (replied rejected) since pool (${this.poolLabel()}) socket is closed`);
@@ -338,8 +390,7 @@ class MultiMinerApp {
       this.minerServer.write(socket, jsonReply(json, false));
       return;
     }
-    this.minerLastSubmitTime = Date.now();
-    this.writePool(ethProxySubmit(json, this.config.user, job));
+    this.forwardMinerRequest(ethProxySubmit(json, this.config.user, job), socket);
   }
   connectPool(poolNum) {
     connectPool({
@@ -368,18 +419,92 @@ class MultiMinerApp {
       this.currPoolSocket.destroy();
     }
     if (!this.flags.quiet) this.logger.log(`Connected to ${  this.config.pools[poolNum]  } pool`);
-    if (!this.currPoolSocket && this.minerServer.socket) {
-      this.logger.log(`Pool (${  this.config.pools[poolNum]  }) <-> miner link was established due to new pool connection`);
-    }
+    // A new upstream session owns new nonce/login state. Reconnect the child socket,
+    // not its process, instead of forwarding our login ACK to the old child session.
+    const minerSocket = this.minerServer.socket;
+    this.minerServer.setCurrent(null);
+    if (minerSocket) minerSocket.destroy();
     this.currPoolNum = poolNum;
     this.currPoolSocket = poolSocket;
+    this.resetPoolState();
+  }
+
+  resetPoolState() {
+    this.currPoolLastJob = null;
+    this.currPoolMinerId = null;
+    this.currPoolLastTarget = null;
+    this.currPoolJobAlgo = null;
+    this.currPoolLoginResult = null;
+    this.currPoolTargetAlgo = null;
+    this.currPoolTargetPending = false;
+    this.currPoolLastExtraNonce = null;
+    this.currPoolExtraNonceAlgo = null;
+    this.currPoolExtraNoncePending = false;
+    this.currMinerSupportsMoNative = false;
+    this.currMinerBooleanSubmit = false;
+    this.pendingMinerRequests.clear();
+    this.pendingMinerFirstJob = null;
+    clearTimeout(this.pendingEthFirstJobTimer);
+    this.pendingEthFirstJob = this.pendingEthSubscribeId = this.pendingEthFirstJobTimer = null;
+    this.delayNextEthFirstJob = false;
     this.ethProxyWork.clear();
   }
 
+  forwardPoolReply(json) {
+    if (Object.prototype.hasOwnProperty.call(json, "method")) return false;
+    const pendingRequest = this.pendingMinerRequests.get(json.id);
+    if (pendingRequest) {
+      this.pendingMinerRequests.delete(json.id);
+      if (pendingRequest.socket !== this.minerServer.socket || pendingRequest.socket.destroyed) return true;
+      this.minerServer.write(pendingRequest.socket, stringifyLine(formatMinerReply(json, pendingRequest)));
+      if (json.id === this.pendingEthSubscribeId) {
+        this.pendingEthSubscribeId = null;
+        this.schedulePendingEthFirstJob();
+      }
+      return true;
+    }
+    return json.id !== 1 && !(this.minerServer.protocol === "ethproxy" && isEthProxyWorkResult(json));
+  }
+
+  replayPoolControls(nextJobAlgo, changedAlgo, targetPending, extraNoncePending) {
+    if (this.currPoolLastExtraNonce && this.currPoolExtraNonceAlgo === nextJobAlgo &&
+        (extraNoncePending || changedAlgo)) {
+      this.minerServer.write(this.minerServer.socket, stringifyLine(this.poolControlForCurrentAlgo(this.currPoolLastExtraNonce)));
+    }
+    if (this.currPoolLastTarget && this.currPoolTargetAlgo === nextJobAlgo &&
+        (targetPending || changedAlgo) &&
+        (this.minerServer.protocol !== "eth" || this.shouldSendEthTarget())) {
+      this.minerServer.write(this.minerServer.socket, stringifyLine(this.poolControlForCurrentAlgo(this.currPoolLastTarget)));
+    }
+  }
+
   poolNewMsg(json) {
+    if (this.forwardPoolReply(json)) return;
+
+    const previousPoolJobAlgo = this.currPoolJobAlgo;
+    const previousTargetPending = this.currPoolTargetPending;
+    const previousExtraNoncePending = this.currPoolExtraNoncePending;
+    const previousSocket = this.minerServer.socket;
     const nextJobAlgo = this.recordPoolMessage(json);
     if (nextJobAlgo !== null && !this.switchAlgo(nextJobAlgo)) return;
     if (!this.minerServer.socket) return;
+    if (nextJobAlgo !== null && this.pendingMinerFirstJob) {
+      const pending = this.pendingMinerFirstJob;
+      this.pendingMinerFirstJob = null;
+      if (pending.socket === this.minerServer.socket) {
+        this.sendFirstJob(pending.json, pending.socket);
+        return;
+      }
+    }
+
+    const sameActiveChild = nextJobAlgo !== null && previousSocket === this.minerServer.socket;
+    const isControl = json.method === "mining.set_target" || json.method === "mining.set_difficulty" ||
+      json.method === "mining.set_extranonce" || json.method === "set_extranonce";
+    if (isControl) {
+      const controlAlgo = json.method === "mining.set_target" || json.method === "mining.set_difficulty"
+        ? this.currPoolTargetAlgo : this.currPoolExtraNonceAlgo;
+      if (controlAlgo == null || controlAlgo !== this.currAlgo) return;
+    }
 
     if (this.minerServer.protocol === "grin") {
       if (nextJobAlgo !== null) this.minerServer.write(this.minerServer.socket, grinJsonReply("getjobtemplate", this.currPoolLastJob));
@@ -395,8 +520,13 @@ class MultiMinerApp {
       this.logger.err(`Ignoring native ${  nextJobAlgo  } job because the connected miner did not negotiate mo-native`);
       return;
     }
-    this.minerServer.write(this.minerServer.socket, stringifyLine(json));
-    if (json.id === this.pendingEthSubscribeId) { this.pendingEthSubscribeId = null; this.schedulePendingEthFirstJob(); }
+    if (sameActiveChild) this.replayPoolControls(nextJobAlgo, previousPoolJobAlgo !== nextJobAlgo,
+      previousTargetPending, previousExtraNoncePending);
+    let message = json;
+    if (json.method === "mining.set_extranonce" || json.method === "set_extranonce") {
+      message = this.poolControlForCurrentAlgo(json);
+    }
+    this.minerServer.write(this.minerServer.socket, stringifyLine(message));
   }
 
   schedulePendingEthFirstJob() { if (this.pendingEthFirstJobTimer || !this.pendingEthFirstJob || this.pendingEthSubscribeId !== null) return; this.pendingEthFirstJobTimer = setTimeout(() => this.flushPendingEthFirstJob(), 250); }
@@ -413,6 +543,8 @@ class MultiMinerApp {
     this.currAlgo = nextJobAlgo;
     const nextMiner = this.config.algos[nextJobAlgo];
     if (!this.currMiner || this.currMiner !== nextMiner) {
+      this.pendingMinerRequests.clear();
+      this.pendingMinerFirstJob = null;
       this.minerServer.setCurrent(null);
       if (!this.flags.quiet) this.logger.log(`Starting miner '${  nextMiner  }' to process new ${  nextJobAlgo  } algo`);
       this.currMiner = nextMiner;
@@ -432,18 +564,7 @@ class MultiMinerApp {
     if (this.currPoolNum !== poolNum) this.logger.err("[INTERNAL ERROR] Unexpected poolNum in poolErr");
     if (this.currPoolSocket && this.minerServer.socket) this.logger.err(`Pool (${  this.poolLabel()  }) <-> miner link was broken due to pool socket error`);
     this.currPoolSocket = null;
-    this.currPoolLastJob = null;
-    this.currPoolMinerId = null;
-    this.currPoolLastTarget = null;
-    this.currPoolJobAlgo = null;
-    this.currPoolLoginResult = null;
-    this.currPoolTargetAlgo = null;
-    this.currPoolTargetPending = false;
-    this.currPoolLastExtraNonce = null;
-    this.currPoolExtraNonceAlgo = null;
-    this.currPoolExtraNoncePending = false;
-    this.currMinerSupportsMoNative = false;
-    this.ethProxyWork.clear();
+    this.resetPoolState();
     this.currPoolNum++;
     if (this.currPoolNum >= this.config.pools.length) {
       if (this.flags.verbose) this.logger.log("Waiting 60 seconds before trying to connect to the same pools once again");

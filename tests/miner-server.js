@@ -35,4 +35,42 @@ describe("miner server", () => {
     });
     assert.equal(rejected.destroyed, true, "rejected socket is destroyed on error");
   });
+
+  it("does not let an old socket close a replacement connection", () => {
+    const server = new MinerServer({
+      config: { miner_host: "127.0.0.1", miner_port: 0 },
+      logger: { err() {}, log() {} },
+      flags: {},
+      getPoolSocket: () => null,
+    });
+    const oldSocket = makeMockSocket();
+    const replacement = makeMockSocket();
+    server.handleConnection(oldSocket);
+    server.setCurrent(oldSocket, "old-protocol");
+    server.setCurrent(replacement, "new-protocol");
+
+    oldSocket.emit("end");
+    assert.equal(server.socket, replacement);
+    assert.equal(server.protocol, "new-protocol");
+
+    oldSocket.emit("error", new Error("late old socket error"));
+    assert.equal(server.socket, replacement);
+    assert.equal(server.protocol, "new-protocol");
+  });
+
+  it("clears the current connection when its own socket closes", () => {
+    const server = new MinerServer({
+      config: { miner_host: "127.0.0.1", miner_port: 0 },
+      logger: { err() {}, log() {} },
+      flags: {},
+      getPoolSocket: () => null,
+    });
+    const current = makeMockSocket();
+    server.handleConnection(current);
+    server.setCurrent(current, "current-protocol");
+
+    current.emit("end");
+    assert.equal(server.socket, null);
+    assert.equal(server.protocol, "default");
+  });
 });

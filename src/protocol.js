@@ -59,6 +59,24 @@ function ethProxySubmit(json, user, job) {
   return submit;
 }
 
+function formatMinerReply(json, request) {
+  let message = Object.assign({}, json, { id: request.originalId });
+  if (request.method === "mining.subscribe" && request.protocol === "eth" &&
+      request.algo === "etchash" && Array.isArray(json.result)) {
+    message = Object.assign({}, message, { result: json.result.slice(0, 2) });
+  } else if ((request.method === "submit" || request.method === "mining.submit") &&
+             request.protocol === "default" && request.algo === "c29" && request.booleanSubmit &&
+             (json.error === null || typeof json.error === "undefined") &&
+             json.result && typeof json.result === "object" && json.result.status === "OK") {
+    message = Object.assign({}, message, { result: true });
+  } else if (request.protocol === "grin" && json.result &&
+             typeof json.result === "object" && json.result.status === "OK") {
+    message.method = "submit";
+    message.result = "ok";
+  }
+  return message;
+}
+
 function ethProxySubmitHeader(json) {
   const params = Array.isArray(json.params) ? json.params : [];
   return normalizeHex(params[1]);
@@ -135,6 +153,7 @@ module.exports = {
   ethProxySubmit,
   ethProxyWork,
   ethSubscribeResult,
+  formatMinerReply,
   isEthProxyWorkResult,
   grinJsonReply,
   jsonError,

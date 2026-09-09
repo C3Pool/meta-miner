@@ -60,11 +60,11 @@ class MinerServer {
     });
 
     minerSocket.on("data", (msg) => parser.push(msg));
-    minerSocket.on("end", () => this.handleClose("closed"));
+    minerSocket.on("end", () => this.handleClose("closed", minerSocket));
     minerSocket.on("error", () => {
       this.logger.err("Miner socket error");
       minerSocket.destroy();
-      this.handleClose("error");
+      this.handleClose("error", minerSocket);
     });
   }
 
@@ -91,7 +91,7 @@ class MinerServer {
     } else if (json.method === "eth_submitHashrate" || json.method === "eth_mining") {
       this.write(minerSocket, jsonReply(json, true));
     } else {
-      this.forwardMinerMessage(json);
+      this.forwardMinerMessage(json, minerSocket);
     }
   }
 
@@ -104,7 +104,11 @@ class MinerServer {
     if (this.protocol !== "grin") this.callHandler("firstJob", json, minerSocket);
   }
 
-  forwardMinerMessage(json) {
+  forwardMinerMessage(json, minerSocket) {
+    if (this.handlers.forward) {
+      this.callHandler("forward", json, minerSocket);
+      return;
+    }
     const poolSocket = this.getPoolSocket();
     if (poolSocket) {
       poolSocket.write(stringifyLine(json));
@@ -118,7 +122,8 @@ class MinerServer {
     if (this.handlers[name]) this.handlers[name](json, minerSocket);
   }
 
-  handleClose(reason) {
+  handleClose(reason, minerSocket) {
+    if (minerSocket !== this.socket) return;
     if (this.flags.verbose) this.logger.log(`Miner socket was ${  reason}`);
     if (this.getPoolSocket() && this.socket) {
       this.logger.err(`Pool (${  this.getPoolLabel()  }) <-> miner link was broken due to ${  reason  } miner socket`);
