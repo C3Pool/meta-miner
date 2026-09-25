@@ -71,6 +71,9 @@ async function runMiner(miner) {
     await app.run();
     await withTimeout(pool.login, 15000, `${miner.name  } Multi-Miner did not login to fake pool`);
     const outcome = await waitForOutcome(pool, miner, output);
+    if (miner.algo === "pearlhash" && pool.submits.length > 0) {
+      assert.equal(pool.submits[0].params.proof_encoding, "gzip");
+    }
     assertMinerProtocol(app, miner);
     const rates = extractHashrates(output.join("\n"), miner.algo).map((rate) => rate.hashrate);
     writeCapture(miner.name, output);
@@ -111,6 +114,7 @@ function assertMinerProtocol(app, miner) {
 
 function expectedProtocol(miner) {
   if (miner.expectedProtocol) return miner.expectedProtocol;
+  if (miner.kind === "pearl") return "eth";
   if (miner.kind === "default" || miner.kind === "grin") return miner.kind;
   if (miner.name.includes("ethproxy")) return "ethproxy";
   if (miner.name === "rigel-etchash") return "ethproxy";

@@ -65,6 +65,20 @@ function nvidiaMinerPlans(scriptCommand, wallet) {
       command: (port) => srb(`--algorithm kawpow --pool 127.0.0.1:${port} --wallet ${wallet} --password x ${gpuFlags}`),
     },
     {
+      name: "srbminer-pearlhash",
+      algo: "pearlhash",
+      binary: "srbminer-multi/SRBMiner-MULTI",
+      kind: "pearl",
+      command: (port) => srb(`--algorithm pearlhash --pool 127.0.0.1:${port} --wallet ${wallet} --password x ${gpuFlags}`),
+    },
+    {
+      name: "bzminer-pearlhash",
+      algo: "pearlhash",
+      binary: "bzminer/bzminer",
+      kind: "pearl",
+      command: (port) => scriptCommand("bzminer", `./bzminer -a pearl -p stratum+tcp://127.0.0.1:${port} -w ${wallet} --pass x --worker multi-miner --nvidia -o log --log-table-interval 30000`),
+    },
+    {
       name: "lolminer-autolykos2",
       algo: "autolykos2",
       binary: "lolminer/lolMiner",

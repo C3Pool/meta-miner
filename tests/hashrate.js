@@ -20,6 +20,7 @@ describe("hashrate extraction", () => {
     ["Rigel table", "|          Total: 77.7 MH/s|   -|  0|  0|n/a|", "etchash", 77700000],
     ["BzMiner", "Total: 88.8 MH/s", "ethash", 88800000],
     ["BzMiner table", "| smry | 0/0/0 |     | --  | --  | --      | 88.8 MH/s | Mining |", "ethash", 88800000],
+    ["BzMiner table current", "| smry | | 2.8s | 0/0/12 | 609.8ghw | -- | 91.46th | connected: yes | diff 1 |", "pearlhash", 91.46e12],
     ["NBMiner", "speed: 66.6 MH/s", "ethash", 66600000],
     ["NBMiner summary", "|    Total:  66.6 MH |     0|     0|  0|", "ethash", 66600000],
     ["Team Black Miner", "Total hashrate: 55.5 MH/s", "ethash", 55500000],
@@ -36,5 +37,22 @@ describe("hashrate extraction", () => {
 
   it("ignores zero-valued share status noise", () => {
     assert.deepEqual(extractHashrates("[ OK ] 1/1 - 0.00 H/s, 1ms ... GPU #0", "etchash"), []);
+  });
+
+  it("does not treat an SRBMiner historical average as the current rate", () => {
+    const table = [
+      "    Hashrate                     0.00 H/s",
+      "    1 min                    9802.72 GH/s",
+      "    1 hr                         0.00 H/s",
+    ].join("\n");
+    assert.deepEqual(extractHashrates(table, "pearlhash"), []);
+  });
+
+  it("still parses the current SRBMiner table rate", () => {
+    const table = [
+      "    Hashrate                     9.81 TH/s",
+      "    1 min                        8.00 TH/s",
+    ].join("\n");
+    assert.deepEqual(extractHashrates(table, "pearlhash").map((entry) => entry.hashrate), [9.81e12]);
   });
 });

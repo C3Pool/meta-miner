@@ -25,10 +25,11 @@ const BENCH_ALGOS = [
   "c29v",
   "ethash",
   "etchash",
+  "pearlhash",
   "k12",
 ];
 
-const CURRENT_GPU_ALGOS = ["autolykos2", "c29", "cn/gpu", "etchash", "kawpow"];
+const CURRENT_GPU_ALGOS = ["autolykos2", "c29", "cn/gpu", "etchash", "kawpow", "pearlhash"];
 
 const BENCH_DEPS = {
   "cn/ccx": { "cn/ccx": 1, "cn/0": 0.5 },
@@ -62,6 +63,7 @@ const BENCH_DEPS = {
   c29v: { c29v: 1 },
   ethash: { ethash: 1 },
   etchash: { etchash: 1 },
+  pearlhash: { pearlhash: 1 },
   k12: { k12: 1 },
   ghostrider: { ghostrider: 1 },
 };

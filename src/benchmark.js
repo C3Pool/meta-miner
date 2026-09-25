@@ -17,6 +17,7 @@ function runBenchmarkRuns(options, callback) {
 }
 
 function runOneBenchmark(options, algo, resolve) {
+  if (options.setBenchmarkAlgo) options.setBenchmarkAlgo(algo);
   options.logger.log(`Checking miner performance for ${  algo  } algo`);
   const cmd = options.config.algos[algo];
   let minerProc = null;
@@ -34,13 +35,17 @@ function runOneBenchmark(options, algo, resolve) {
   function finish() {
     completed = true;
     clearTimeout(timeout);
+    const done = () => {
+      if (options.setBenchmarkAlgo) options.setBenchmarkAlgo(null);
+      resolve();
+    };
     if (!minerProc || minerProc.exitCode !== null || minerProc.signalCode !== null) {
       // Already exited (e.g. the miner quit before emitting parseable hashrate): 'close' has already
       // fired, so once('close') would never resolve and would wedge the sequential startup queue.
-      resolve();
+      done();
       return;
     }
-    minerProc.once("close", resolve);
+    minerProc.once("close", done);
     treeKill(minerProc.pid);
   }
 
@@ -56,6 +61,12 @@ function runOneBenchmark(options, algo, resolve) {
     },
     subscribe(json, minerSocket) {
       options.server.write(minerSocket, benchmarkSubscribeReply(json, "benchmark"));
+    },
+    forward(json, minerSocket) {
+      if (!Object.prototype.hasOwnProperty.call(json, "id")) return;
+      const reply = options.server.protocol === "grin" && json.method === "submit"
+        ? grinJsonReply("submit", "ok") : jsonReply(json, true);
+      options.server.write(minerSocket, reply);
     },
   });
 
@@ -87,10 +98,28 @@ function setBenchmarkPerf(options, algo, hashrate) {
 }
 
 function benchmarkJobLine(algo, protocol, json) {
+  if (algo === "pearlhash") return pearlBenchmarkJob();
   if (protocol === "grin") return grinBenchmarkJob(algo);
   if (protocol === "ethproxy") return stringifyLine({ jsonrpc: "2.0", id: json.id, error: null, result: ethProxyWork(ethBenchmarkParams(algo), null) });
   if (protocol === "eth") return ethBenchmarkJob(algo);
   return defaultBenchmarkJob(algo, json);
+}
+
+function pearlBenchmarkJob() {
+  return stringifyLine({
+    jsonrpc: "2.0",
+    id: null,
+    method: "mining.notify",
+    params: {
+      job_id: "benchmark1",
+      // Keep the synthetic target realistic so a fast miner does not flood the
+      // local benchmark server with thousands of irrelevant submissions.
+      header: `${"0".repeat(144)  }f7c6101e`,
+      target: "000000000002d09370d42573603d4e1213067bce3251b64271d3f31ccfa00fe0",
+      cert_version: 3,
+      proof_encodings: ["none"],
+    },
+  });
 }
 
 function grinBenchmarkJob(algo) {

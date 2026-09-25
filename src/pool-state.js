@@ -69,15 +69,25 @@ function rememberPoolAlgo(app, nextJobAlgo) {
   app.currPoolJobAlgo = nextJobAlgo;
 }
 
+function poolJobAlgo(json, params) {
+  const explicit = json.algo || (params && params.algo);
+  if (explicit) return normalizePoolAlgo(explicit, params);
+  if (params && !Array.isArray(params) && typeof params === "object" &&
+      (typeof params.job_id === "string" || Number.isSafeInteger(params.job_id)) &&
+      typeof params.header === "string" && /^(?:0x)?[0-9a-fA-F]{152}$/.test(params.header) &&
+      params.cert_version === 3) return "pearlhash";
+  return DEFAULT_ALGO;
+}
+
 function recordPoolMessage(app, json) {
   let nextJobAlgo = null;
   if ("method" in json) {
     if (json.method === "job") {
       const params = json.params && typeof json.params === "object" ? json.params : {};
-      nextJobAlgo = normalizePoolAlgo(params.algo || DEFAULT_ALGO, params);
+      nextJobAlgo = poolJobAlgo(json, params);
       rememberJob(app, params, nextJobAlgo);
     } else if (json.method === "mining.notify") {
-      nextJobAlgo = normalizePoolAlgo(json.algo || (json.params && json.params.algo) || DEFAULT_ALGO, json.params);
+      nextJobAlgo = poolJobAlgo(json, json.params);
       rememberJob(app, json.params || [], nextJobAlgo);
     } else if (json.method === "mining.set_target" || json.method === "mining.set_difficulty") {
       rememberTarget(app, json);
@@ -88,7 +98,7 @@ function recordPoolMessage(app, json) {
     app.currPoolMinerId = json.result.id;
     if (json.id === 1) app.currPoolLoginResult = Object.assign({}, json.result);
     if (json.result.job) {
-      nextJobAlgo = normalizePoolAlgo(json.result.job.algo || DEFAULT_ALGO, json.result.job);
+      nextJobAlgo = poolJobAlgo(json.result.job, json.result.job);
       rememberJob(app, json.result.job, nextJobAlgo);
     } else if (json.id === 1 && json.result.algo) {
       nextJobAlgo = normalizePoolAlgo(json.result.algo, json.result);

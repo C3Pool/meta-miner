@@ -244,6 +244,91 @@ describe("protocol and diagnostics", () => {
     ]);
   });
 
+  it("recognizes accepted untagged Pearl job variants, including a cached login job", () => {
+    const app = new MultiMinerApp([], { cwd: fs.mkdtempSync(path.join(os.tmpdir(), "mm-pearl-job-shape-")) });
+    app.logger = silentLogger();
+    const header = "ab".repeat(76);
+    const jobs = [
+      { cert_version: 3, header, job_id: "pearl-string" },
+      { cert_version: 3, header: `0x${  header}`, job_id: 7 },
+    ];
+
+    for (const job of jobs) {
+      app.currPoolJobAlgo = null;
+      assert.equal(app.recordPoolMessage({ jsonrpc: "2.0", method: "mining.notify", params: job }), "pearlhash");
+    }
+
+    app.currPoolJobAlgo = null;
+    assert.equal(app.recordPoolMessage({
+      id: 1,
+      jsonrpc: "2.0",
+      error: null,
+      result: { id: "pool-worker", job: jobs[1], status: "OK" },
+    }), "pearlhash");
+  });
+
+  it("does not inherit Pearl for an untagged legacy job", () => {
+    const app = new MultiMinerApp([], { cwd: fs.mkdtempSync(path.join(os.tmpdir(), "mm-pearl-legacy-job-")) });
+    app.logger = silentLogger();
+    app.currPoolJobAlgo = "pearlhash";
+    const params = ["legacy-job", "header", "target"];
+
+    assert.equal(app.recordPoolMessage({ jsonrpc: "2.0", method: "mining.notify", params }), "rx/0");
+    assert.equal(app.currPoolJobAlgo, "rx/0");
+    assert.deepEqual(app.currPoolLastJob, params);
+  });
+
+  it("holds a Pearl job until the child subscribe reply and sends it once", async () => {
+    const app = new MultiMinerApp([], { cwd: fs.mkdtempSync(path.join(os.tmpdir(), "mm-pearl-subscribe-")) });
+    app.logger = silentLogger();
+    app.config.algos = { pearlhash: "pearl-child" };
+    app.currMiner = "pearl-child";
+    app.currAlgo = "pearlhash";
+    app.currPoolJobAlgo = "pearlhash";
+    app.currPoolLastJob = { cert_version: 3, header: "00".repeat(76), job_id: "old-job" };
+    app.replaceMiner = () => {};
+    const poolWrites = [];
+    const minerWrites = [];
+    const poolSocket = jsonSink(poolWrites);
+    const minerSocket = trackedSocket(minerWrites);
+    app.currPoolSocket = poolSocket;
+    app.setRuntimeMinerHandlers();
+
+    app.minerServer.handleMessage({ id: 1, jsonrpc: "2.0", method: "mining.subscribe", params: [] }, minerSocket);
+    app.minerServer.handleMessage({ id: 2, jsonrpc: "2.0", method: "mining.authorize", params: ["wallet", "x"] }, minerSocket);
+    const freshJob = {
+      id: null,
+      jsonrpc: "2.0",
+      method: "mining.notify",
+      params: { cert_version: 3, header: "11".repeat(76), job_id: "fresh-job" },
+    };
+    app.poolNewMsg(freshJob, poolSocket);
+    assert.deepEqual(minerWrites, [{ id: 2, jsonrpc: "2.0", error: null, result: true }]);
+
+    app.poolNewMsg({ id: poolWrites[0].id, jsonrpc: "2.0", error: null, result: ethSubscribeResult("pearl") }, poolSocket);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(minerWrites.filter((message) => message.method === "mining.notify").length, 1);
+    assert.equal(minerWrites.at(-1).params.job_id, "fresh-job");
+  });
+
+  it("ignores a late frame from a replaced pool socket", () => {
+    const app = new MultiMinerApp([], { cwd: fs.mkdtempSync(path.join(os.tmpdir(), "mm-stale-pool-frame-")) });
+    app.logger = silentLogger();
+    const currentPool = trackedSocket();
+    app.currPoolSocket = currentPool;
+    app.currPoolJobAlgo = "etchash";
+    app.currPoolLastJob = ethNotifyParams("current-job");
+
+    app.poolNewMsg({
+      jsonrpc: "2.0",
+      method: "mining.notify",
+      params: { cert_version: 3, header: "22".repeat(76), job_id: "stale-pearl" },
+    }, trackedSocket());
+
+    assert.equal(app.currPoolJobAlgo, "etchash");
+    assert.deepEqual(app.currPoolLastJob, ethNotifyParams("current-job"));
+  });
+
   it("preserves an optional final hash on translated ETH proxy submits", () => {
     const submit = ethProxySubmit({ id: 3, params: ["0x00", "0xheader", "0xmix"], result: "a".repeat(64) }, "wallet", ["job1"]);
     assert.equal(submit.result, "a".repeat(64));

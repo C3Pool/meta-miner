@@ -4,15 +4,27 @@ const fs = require("fs");
 const net = require("net");
 const { createJsonLineParser } = require("../../src/json-lines");
 
+const MAX_CAPTURE_CHARS = 4 * 1024 * 1024;
+
 function assertNoLiveFailures(assert, results) {
   const failures = results.filter((result) => result.status === "failed");
   assert.equal(failures.length, 0, failures.map((result) => `${result.name  }: ${  result.reason  }\n${  result.output || ""}`).join("\n"));
 }
 
 function captureOutput(app, output) {
-  app.logger.log = (message) => output.push(`>>> ${  message}`);
-  app.logger.err = (message) => output.push(`!!! ${  message}`);
-  app.logger.miner = (message) => output.push(String(message));
+  let capturedChars = 0;
+  const append = (message) => {
+    let text = String(message);
+    if (text.length > MAX_CAPTURE_CHARS) text = text.slice(-MAX_CAPTURE_CHARS);
+    output.push(text);
+    capturedChars += text.length;
+    while (capturedChars > MAX_CAPTURE_CHARS && output.length > 1) {
+      capturedChars -= output.shift().length;
+    }
+  };
+  app.logger.log = (message) => append(`>>> ${  message}`);
+  app.logger.err = (message) => append(`!!! ${  message}`);
+  app.logger.miner = append;
 }
 
 function envInt(name, fallback) { return Number.parseInt(process.env[name] || String(fallback), 10); }
@@ -31,14 +43,26 @@ function freePort() {
 }
 
 function createJsonLineServer(onLine, extra) {
+  const sockets = new Set();
   const server = net.createServer((socket) => {
-    const parser = createJsonLineParser((json) => onLine(socket, json));
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    const parser = createJsonLineParser((json) => onLine(socket, json), undefined, extra && extra.maxLineBytes);
     socket.on("error", () => {});
     socket.on("data", (chunk) => parser.push(chunk));
   });
+  let closePromise;
   return new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => resolve({
-      close: () => new Promise((done) => server.close(done)),
+      close: () => {
+        if (!closePromise) {
+          closePromise = new Promise((done) => {
+            for (const socket of sockets) socket.destroy();
+            server.close(done);
+          });
+        }
+        return closePromise;
+      },
       port: server.address().port,
       ...(extra || {}),
     }));

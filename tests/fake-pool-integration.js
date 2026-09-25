@@ -5,6 +5,7 @@ const fs = require("fs");
 const net = require("net");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 const { describe, it } = require("node:test");
 
 const { MultiMinerApp } = require("../mm");
@@ -20,6 +21,41 @@ if (process.argv[2] === "--fake-eth-child") {
   });
 } else {
 describe("fake-pool integration", { concurrency: false }, () => {
+  it("closes an active fake-pool client promptly", async () => {
+    let accepted;
+    let acceptedSocket;
+    let resolveSocketClosed;
+    const acceptedPromise = new Promise((resolve) => { accepted = resolve; });
+    const socketClosed = new Promise((resolve) => { resolveSocketClosed = resolve; });
+    const pool = await createJsonLineServer((socket) => {
+      acceptedSocket = socket;
+      socket.once("close", resolveSocketClosed);
+      accepted();
+    });
+    const client = net.connect(pool.port, "127.0.0.1");
+    client.on("error", () => {});
+    const connected = new Promise((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("error", reject);
+    });
+    const closed = new Promise((resolve) => client.once("close", resolve));
+
+    try {
+      await withTimeout(connected, 1000, "fake-pool client did not connect");
+      client.write("{}\n");
+      await withTimeout(acceptedPromise, 1000, "fake-pool server did not accept the client");
+      await withTimeout(pool.close(), 1000, "fake-pool close did not resolve");
+      await withTimeout(closed, 1000, "fake-pool client did not close");
+      await withTimeout(socketClosed, 1000, "fake-pool server socket did not close");
+      assert.equal(client.destroyed, true);
+      assert.equal(acceptedSocket.destroyed, true);
+      await pool.close();
+    } finally {
+      client.destroy();
+      await pool.close().catch(() => {});
+    }
+  });
+
   it("logs in, switches algo, and forwards miner submit", async () => {
     const minerPort = await freePort();
     const pool = await createFakePool("rx/0");
@@ -96,6 +132,177 @@ describe("fake-pool integration", { concurrency: false }, () => {
       await app.stop();
       await pool.close();
     }
+  });
+
+  it("recognizes untagged Pearl jobs and forwards large proof submissions", async () => {
+    const minerPort = await freePort();
+    const pool = await createFakePool("pearlhash", "pearl");
+    const app = new MultiMinerApp([
+      "--no-config-save",
+      "--watchdog=0",
+      `--pool=127.0.0.1:${  pool.port}`,
+      "--user=wallet",
+      "--pass=x",
+      `--port=${  minerPort}`,
+      "--perf_pearlhash=0",
+      `--pearlhash=${  fakeMinerCommand(minerPort, "pearl", "pearlhash")}`,
+    ], appOptions());
+    const output = [];
+    captureOutput(app, output);
+
+    try {
+      await app.run();
+      const login = await pool.login;
+      assert.ok(login.params.algo.includes("pearlhash"));
+      const submit = await pool.submit;
+      assert.equal(app.currAlgo, "pearlhash");
+      assert.equal(app.config.algo_perf.pearlhash, 1e12);
+      assert.equal(submit.method, "mining.submit");
+      assert.equal(Array.isArray(submit.params), false);
+      assert.equal(submit.params.job_id, "pearl-job-1");
+      assert.equal(submit.params.proof_encoding, "gzip");
+      const proof = zlib.gunzipSync(Buffer.from(submit.params.plain_proof, "base64"));
+      assert.ok(proof.toString("base64").length > 1024 * 1024);
+      assert.doesNotMatch(output.join("\n"), /Line exceeded|Can't parse message from the miner/);
+    } finally {
+      await app.stop();
+      await pool.close();
+    }
+  });
+
+  it("switches one pool session etchash to Pearl and back with correlated submits", async () => {
+    const minerPort = await freePort();
+    const jobIds = ["etchash-stage-1", "pearl-stage-2", "etchash-stage-3"];
+    const stageByJobId = new Map([
+      [jobIds[0], "etchash"],
+      [jobIds[1], "pearlhash"],
+      [jobIds[2], "etchash"],
+    ]);
+    const submissions = [];
+    const submitAcks = [];
+    const poolSockets = new Set();
+    const startedPids = [];
+    let loginCount = 0;
+    let resolveSubmits;
+    let resolveAcks;
+    const allSubmits = new Promise((resolve) => { resolveSubmits = resolve; });
+    const allAcks = new Promise((resolve) => { resolveAcks = resolve; });
+    const pearlJob = {
+      jsonrpc: "2.0",
+      id: null,
+      method: "mining.notify",
+      params: {
+        cert_version: 3,
+        header: "00".repeat(76),
+        job_id: jobIds[1],
+        proof_encodings: ["none", "gzip"],
+        target: "00".repeat(32),
+      },
+    };
+    const send = (socket, message) => socket.write(stringifyLine(message));
+    const sendEtchashJob = (socket, jobId) => {
+      send(socket, { jsonrpc: "2.0", method: "mining.set_difficulty", params: [0.001] });
+      send(socket, { jsonrpc: "2.0", method: "mining.notify", algo: "etchash", params: ethNotifyParams(jobId) });
+    };
+
+    const pool = await createJsonLineServer((socket, json) => {
+      poolSockets.add(socket);
+      if (json.method === "login") {
+        loginCount += 1;
+        send(socket, { id: json.id, jsonrpc: "2.0", error: null, result: { id: "pool-worker", status: "OK" } });
+        if (loginCount === 1) sendEtchashJob(socket, jobIds[0]);
+        return;
+      }
+      if (json.method === "mining.subscribe") {
+        send(socket, { id: json.id, jsonrpc: "2.0", error: null, result: ethSubscribeResult("switch") });
+        return;
+      }
+      if (json.method !== "mining.submit") return;
+
+      const params = json.params;
+      const jobId = Array.isArray(params) ? params[1] : params && params.job_id;
+      const stage = stageByJobId.get(jobId) || "unknown";
+      let pearlProofDecoded = false;
+      const pearlEncoding = !Array.isArray(params) && params && params.proof_encoding;
+      if (pearlEncoding === "gzip") {
+        try {
+          pearlProofDecoded = zlib.gunzipSync(Buffer.from(params.plain_proof, "base64")).length > 0;
+        } catch { pearlProofDecoded = false; }
+      }
+      submissions.push({
+        stage,
+        method: json.method,
+        paramsArray: Array.isArray(params),
+        pearlEncoding: pearlEncoding || null,
+        pearlProofDecoded,
+        upstreamId: json.id,
+      });
+      send(socket, { id: json.id, jsonrpc: "2.0", error: null, result: true });
+      if (submissions.length === 1) send(socket, pearlJob);
+      if (submissions.length === 2) sendEtchashJob(socket, jobIds[2]);
+      if (submissions.length === 3) resolveSubmits();
+    }, { maxLineBytes: 12 * 1024 * 1024 });
+
+    const app = new MultiMinerApp([
+      "--no-config-save",
+      "--watchdog=0",
+      `--pool=127.0.0.1:${  pool.port}`,
+      "--user=test-user",
+      "--pass=test-pass",
+      `--port=${  minerPort}`,
+      "--perf_etchash=1",
+      "--perf_pearlhash=1",
+    ], Object.assign(appOptions(), { skipMinerCheck: true }));
+    app.config.algos.etchash = fakeMinerCommand(minerPort, "eth", "etchash");
+    app.config.algos.pearlhash = fakeMinerCommand(minerPort, "pearl", "pearlhash");
+    const output = [];
+    captureOutput(app, output);
+    const startMiner = app.startMinerProcess.bind(app);
+    app.startMinerProcess = (command, outCb) => {
+      const process = startMiner(command, outCb);
+      if (process && process.pid) startedPids.push(process.pid);
+      return process;
+    };
+    const writeMiner = app.minerServer.write.bind(app.minerServer);
+    app.minerServer.write = (socket, message) => {
+      const frame = typeof message === "string" ? JSON.parse(message) : message;
+      if (frame && frame.id === 3 && frame.error === null && frame.result === true) {
+        submitAcks.push({ id: frame.id, result: frame.result });
+        if (submitAcks.length === 3) resolveAcks();
+      }
+      return writeMiner(socket, message);
+    };
+
+    try {
+      await app.run();
+      await withTimeout(Promise.all([allSubmits, allAcks]), 15000,
+        `fake children did not complete the Pearl switch sequence (${  loginCount  } logins, ${  submissions.length  } submits, ${  submitAcks.length  } ACKs, ${  startedPids.length  } children)`);
+
+      assert.equal(loginCount, 1, "all three algo stages reuse one upstream login");
+      assert.equal(poolSockets.size, 1, "all three algo stages reuse one upstream socket");
+      assert.deepEqual(submissions.map(({ stage }) => stage), ["etchash", "pearlhash", "etchash"]);
+      assert.ok(submissions.every(({ method }) => method === "mining.submit"), "each stage forwards a mining.submit");
+      assert.equal(submissions[1].paramsArray, false, "Pearl remains an object submission");
+      assert.equal(submissions[1].pearlEncoding, "gzip", "Pearl is advertised as gzip");
+      assert.equal(submissions[1].pearlProofDecoded, true, "the forwarded Pearl proof is valid gzip");
+      assert.equal(new Set(submissions.map(({ upstreamId }) => upstreamId)).size, 3, "each stage gets a distinct upstream request ID");
+      assert.deepEqual(submitAcks.map(({ id, result }) => ({ id, result })), [
+        { id: 3, result: true },
+        { id: 3, result: true },
+        { id: 3, result: true },
+      ], "each child receives its correlated submit ACK");
+      assert.equal(submissions.length, 3, "exactly one submit is forwarded per algo stage");
+      assert.equal(startedPids.length, 3, "one fake child starts for each algo stage");
+      assert.equal(new Set(startedPids).size, 3, "each algo stage uses a distinct fake child");
+      assert.equal(app.currAlgo, "etchash", "the final active algo is etchash");
+    } finally {
+      await app.stop();
+      await pool.close();
+    }
+
+    assert.equal(app.minerProc, null, "the final child is torn down");
+    assert.equal(app.minerServer.socket, null, "the miner socket is torn down");
+    assert.ok([...poolSockets].every((socket) => socket.destroyed), "the upstream socket is torn down");
   });
 
   it("switches real fake children across marked ETH, C29, and ETH jobs", async () => {

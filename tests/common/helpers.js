@@ -39,7 +39,11 @@ function createFakePool(algo, mode) {
   let resolveSubmit;
   const login = new Promise((resolve) => { resolveLogin = resolve; });
   const submit = new Promise((resolve) => { resolveSubmit = resolve; });
-  return createJsonLineServer((socket, json) => handlePoolJson(socket, json, algo, mode, resolveLogin, resolveSubmit), { login, submit });
+  return createJsonLineServer((socket, json) => handlePoolJson(socket, json, algo, mode, resolveLogin, resolveSubmit), {
+    login,
+    submit,
+    maxLineBytes: mode === "pearl" ? 12 * 1024 * 1024 : undefined,
+  });
 }
 
 function handlePoolJson(socket, json, algo, mode, resolveLogin, resolveSubmit) {
@@ -47,6 +51,7 @@ function handlePoolJson(socket, json, algo, mode, resolveLogin, resolveSubmit) {
     resolveLogin(json);
     socket.write(stringifyLine(poolLoginReply(algo, mode)));
     if (mode === "eth") sendEthJob(socket, algo);
+    if (mode === "pearl") sendPearlJob(socket);
     return;
   }
   if (json.method === "mining.subscribe") {
@@ -86,6 +91,21 @@ function poolLoginReply(algo, mode) {
 function sendEthJob(socket) {
   socket.write(stringifyLine({ jsonrpc: "2.0", method: "mining.set_difficulty", params: [0.000001] }));
   socket.write(stringifyLine({ jsonrpc: "2.0", method: "mining.notify", algo: "etchash", params: ethNotifyParams() }));
+}
+
+function sendPearlJob(socket) {
+  socket.write(stringifyLine({
+    id: null,
+    jsonrpc: "2.0",
+    method: "mining.notify",
+    params: {
+      cert_version: 3,
+      header: `${"0".repeat(144)  }f7c6101e`,
+      job_id: "pearl-job-1",
+      proof_encodings: ["none", "gzip"],
+      target: "000010c6f7a0b5ed8d36b4c7f34938583621fafc8b0079a2834d26fa3fcc9ea9",
+    },
+  }));
 }
 
 function ethNotifyParams(jobId) {

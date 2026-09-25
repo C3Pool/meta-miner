@@ -7,19 +7,28 @@ const { createJsonLineServer } = require("./live-helpers");
 
 const EASY_ETH_TARGET = process.env.MM_LIVE_EASY_ETH_TARGET || "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const MAX_EXPLICIT_TARGET_DIFFICULTY = 1100000;
+const PEARL_MAX_LINE_BYTES = 12 * 1024 * 1024;
+const PEARL_HEADER = `${"0".repeat(144)  }f7c6101e`;
+const PEARL_TARGET = "000010c6f7a0b5ed8d36b4c7f34938583621fafc8b0079a2834d26fa3fcc9ea9";
 
 function createLiveFakePool(testCase) {
   let resolveLogin;
   const login = new Promise((resolve) => { resolveLogin = resolve; });
   const submits = [];
-  return createJsonLineServer((socket, json) => handlePoolJson(socket, json, testCase, resolveLogin, submits), { login, submits });
+  return createJsonLineServer((socket, json) => handlePoolJson(socket, json, testCase, resolveLogin, submits), {
+    login,
+    submits,
+    maxLineBytes: testCase.kind === "pearl" ? PEARL_MAX_LINE_BYTES : undefined,
+  });
 }
 
 function handlePoolJson(socket, json, testCase, resolveLogin, submits) {
   if (json.method === "login") {
     resolveLogin(json);
-    socket.write(stringifyLine(testCase.kind === "eth" ? ethLoginReply(json.id) : poolLoginReply(json.id, testCase.algo)));
+    socket.write(stringifyLine(testCase.kind === "eth" || testCase.kind === "pearl"
+      ? ethLoginReply(json.id) : poolLoginReply(json.id, testCase.algo)));
     if (testCase.kind === "eth") sendEthJob(socket, testCase);
+    if (testCase.kind === "pearl") sendPearlJob(socket);
     return;
   }
   if (json.method === "mining.subscribe") {
@@ -31,9 +40,26 @@ function handlePoolJson(socket, json, testCase, resolveLogin, submits) {
     return;
   }
   if (json.method === "submit" || json.method === "mining.submit") {
-    submits.push(json);
+    // Keep enough samples for diagnostics without retaining an unbounded stream
+    // of multi-megabyte Pearl proofs from very-low-difficulty test jobs.
+    if (submits.length < 8) submits.push(json);
     socket.write(stringifyLine({ id: json.id, jsonrpc: "2.0", error: null, result: true }));
   }
+}
+
+function sendPearlJob(socket) {
+  socket.write(stringifyLine({
+    id: null,
+    jsonrpc: "2.0",
+    method: "mining.notify",
+    params: {
+      cert_version: 3,
+      header: PEARL_HEADER,
+      job_id: "pearl-live",
+      proof_encodings: ["none", "gzip"],
+      target: PEARL_TARGET,
+    },
+  }));
 }
 
 function poolLoginReply(id, algo) {

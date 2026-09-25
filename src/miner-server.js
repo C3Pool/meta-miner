@@ -1,8 +1,10 @@
 "use strict";
 
 const net = require("net");
-const { createJsonLineParser, stringifyLine } = require("./json-lines");
+const { createJsonLineParser, formatProtocolLog, stringifyLine } = require("./json-lines");
 const { ethSubscribeResult, jsonReply } = require("./protocol");
+
+const PEARL_MAX_LINE_BYTES = 12 * 1024 * 1024;
 
 class MinerServer {
   constructor(options) {
@@ -12,6 +14,7 @@ class MinerServer {
     this.getPoolSocket = options.getPoolSocket;
     this.getPoolLabel = options.getPoolLabel;
     this.getCurrentMiner = options.getCurrentMiner;
+    this.getCurrentAlgo = options.getCurrentAlgo || (() => null);
     this.replaceMiner = options.replaceMiner;
     this.onSubmit = options.onSubmit;
     this.handlers = {};
@@ -29,6 +32,11 @@ class MinerServer {
   }
 
   close(callback) {
+    const socket = this.socket;
+    if (socket) {
+      this.setCurrent(null);
+      socket.destroy();
+    }
     this.server.close(callback);
   }
 
@@ -39,7 +47,7 @@ class MinerServer {
 
   write(socket, message) {
     const line = typeof message === "string" ? message : stringifyLine(message);
-    if (this.flags.debug) this.logger.log(`Multi-Miner message to miner: ${  line.trimEnd()}`);
+    if (this.flags.debug) this.logger.log(`Multi-Miner message to miner: ${  formatProtocolLog(message)}`);
     socket.write(line);
   }
 
@@ -55,9 +63,9 @@ class MinerServer {
     }
     if (this.flags.verbose) this.logger.log(`Miner server on ${  this.config.miner_host  }:${  this.config.miner_port  } port connected from ${  minerSocket.remoteAddress}`);
 
-    const parser = createJsonLineParser((json) => this.handleMessage(json, minerSocket), (message) => {
-      this.logger.err(`Can't parse message from the miner: ${  message}`);
-    });
+    const parser = createJsonLineParser((json) => this.handleMessage(json, minerSocket), (message, error) => {
+      this.logger.err(`Can't parse message from the miner (${  Buffer.byteLength(message)  } bytes): ${  error.message}`);
+    }, () => this.getCurrentAlgo() === "pearlhash" ? PEARL_MAX_LINE_BYTES : undefined);
 
     minerSocket.on("data", (msg) => parser.push(msg));
     minerSocket.on("end", () => this.handleClose("closed", minerSocket));
@@ -69,7 +77,7 @@ class MinerServer {
   }
 
   handleMessage(json, minerSocket) {
-    if (this.flags.debug) this.logger.log(`Miner message: ${  JSON.stringify(json)}`);
+    if (this.flags.debug) this.logger.log(`Miner message: ${  formatProtocolLog(json)}`);
     if (json.method === "login") {
       this.handleLogin(json, minerSocket);
     } else if (json.method === "mining.authorize") {

@@ -42,11 +42,13 @@ const HASHRATE_PARSERS = [
   unitParser("T-Rex", 3, /\b(?:Hashrate|Total):\s*([\d.]+)\s*([kMGT]?H)\/s\b/i, 1, 2),
   unitParser("GMiner table", 2, /\|\s*\d+\s+[^|]+\s+([\d.]+)\s*([kMGT]?H)\/s\s+[\d/]+\s*\|/i, 1, 2),
   unitParser("BzMiner", 3, /\b(?:Total|Hashrate):\s*([\d.]+)\s*([kMGT]?H\/s)\b/i, 1, 2),
-  unitParser("BzMiner table", 3, /\|\s*smry\s*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|\s*([\d.]+)\s*([kMGT]?H)\/s\s*\|/i, 1, 2),
+  unitParser("BzMiner table", 3, /\|\s*smry\s*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|\s*([\d.]+)\s*([kMGT]?H)(?:\/s)?\s*\|/i, 1, 2),
   unitParser("NBMiner", 3, /\b(?:Total|speed):\s*([\d.]+)\s*([kMGT]?H\/s)\b/i, 1, 2),
   unitParser("NBMiner summary", 3, /\|\s*Total:\s*([\d.]+)\s*([kMGT]?H)?\s*\|/i, 1, 2),
   unitParser("Team Black Miner", 3, /\bTotal hashrate:\s*([\d.]+)\s*([kMGT]?H\/s)\b/i, 1, 2),
-  unitParser("legacy unit", 2, /\b([\d.]+)\s*([kMGT]?H)\/s\b/i, 1, 2),
+  // SRBMiner prints historical 1 min/1 hr/6 hr/12 hr rows beside its current
+  // rate. Those stale averages must never satisfy a fresh benchmark.
+  unitParser("legacy unit", 2, /^(?![^\n]*\b(?:1 min|1 hr|6 hr|12 hr)\b)[^\n]*?\b([\d.]+)\s*([kMGT]?H)\/s\b/im, 1, 2),
 ];
 
 function parser(name, stabilization, regex, valueGroup, scale) {

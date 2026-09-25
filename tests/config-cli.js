@@ -9,7 +9,7 @@ const { describe, it } = require("node:test");
 const { BENCH_ALGOS, CURRENT_GPU_ALGOS, algoAliases, benchAlgoDeps, localAlgoPerf, normalizePoolAlgo } = require("../src/algorithms");
 const { parseCommand } = require("../src/command");
 const { parseArgs, parsePoolAddress } = require("../src/config");
-const { createJsonLineParser, stringifyLine } = require("../src/json-lines");
+const { createJsonLineParser, formatProtocolLog, stringifyLine } = require("../src/json-lines");
 const { baseParseOptions } = require("./common/helpers");
 
 describe("config and CLI", () => {
@@ -68,7 +68,7 @@ describe("command parsing", () => {
 
 describe("algorithm metadata", () => {
   it("keeps current GPU algorithms listed", () => {
-    for (const algo of ["autolykos2", "c29", "cn/gpu", "etchash", "kawpow"]) {
+    for (const algo of ["autolykos2", "c29", "cn/gpu", "etchash", "kawpow", "pearlhash"]) {
       assert.ok(CURRENT_GPU_ALGOS.includes(algo));
       assert.ok(BENCH_ALGOS.includes(algo));
     }
@@ -79,6 +79,7 @@ describe("algorithm metadata", () => {
     assert.equal(benchAlgoDeps("cn/r", 30)["cn/fast"], 60);
     assert.equal(benchAlgoDeps("rx/0", 10)["rx/sfx"], 10);
     assert.equal(benchAlgoDeps("kawpow", 20_000_000).kawpow1, 20_000_000);
+    assert.equal(benchAlgoDeps("pearlhash", 20_000_000).pearlhash, 20_000_000);
     assert.equal(localAlgoPerf({ algo_perf: { kawpow: 0.01 } }, "kawpow"), 0.01 * 0x100000000);
     assert.equal(localAlgoPerf({ algo_perf: { kawpow1: 20_000_000 } }, "kawpow"), 20_000_000);
     assert.equal(normalizePoolAlgo("cuckaroo", { proofsize: 42 }), "c29");
@@ -97,6 +98,35 @@ describe("JSON-line framing", () => {
     assert.equal(stringifyLine({ ok: true }), "{\"ok\":true}\n");
   });
 
+  it("bounds and redacts protocol log messages", () => {
+    const proofLog = formatProtocolLog({ method: "mining.submit", params: { plain_proof: "a".repeat(5000) } });
+    assert.match(proofLog, /<redacted 5000 characters>/);
+    assert.doesNotMatch(proofLog, /a{100}/);
+    const serializedProofLog = formatProtocolLog(JSON.stringify({ params: { plain_proof: "a".repeat(5000) } }));
+    assert.match(serializedProofLog, /<redacted 5000 characters>/);
+    assert.doesNotMatch(serializedProofLog, /a{100}/);
+    assert.match(formatProtocolLog(JSON.stringify({ params: { plain_proof: "?".repeat(5000) } })),
+      /<redacted 5000 characters>/);
+    assert.ok(formatProtocolLog("x".repeat(5000)).length < 4200);
+  });
+
+  it("tracks partial-line bytes without rescanning the retained proof", () => {
+    const originalByteLength = Buffer.byteLength;
+    let largestInput = 0;
+    Buffer.byteLength = (value, encoding) => {
+      largestInput = Math.max(largestInput, typeof value === "string" ? value.length : value.byteLength);
+      return originalByteLength(value, encoding);
+    };
+    try {
+      const parser = createJsonLineParser(() => {}, () => {}, 3 * 1024 * 1024);
+      const chunk = "x".repeat(16 * 1024);
+      for (let i = 0; i < 128; i += 1) parser.push(chunk);
+    } finally {
+      Buffer.byteLength = originalByteLength;
+    }
+    assert.equal(largestInput, 16 * 1024);
+  });
+
   it("drops an over-long un-terminated line instead of buffering without bound", () => {
     const parsed = [];
     let invalidCount = 0;
@@ -109,5 +139,18 @@ describe("JSON-line framing", () => {
     // Close the abandoned line, then a fresh framed line parses normally (clean resync).
     parser.push("more-garbage\n{\"c\":3}\n");
     assert.deepEqual(parsed, [{ c: 3 }]);
+  });
+
+  it("enforces a caller-selected line cap even when the newline is in the same chunk", () => {
+    const parsed = [];
+    let invalidCount = 0;
+    let limit = 32;
+    const parser = createJsonLineParser((json) => parsed.push(json), () => { invalidCount += 1; }, () => limit);
+    parser.push(`${JSON.stringify({ value: "x".repeat(64) })  }\n`);
+    assert.equal(invalidCount, 1);
+    assert.deepEqual(parsed, []);
+    limit = 256;
+    parser.push(`${JSON.stringify({ ok: true })  }\n`);
+    assert.deepEqual(parsed, [{ ok: true }]);
   });
 });

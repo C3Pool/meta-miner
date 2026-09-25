@@ -2,7 +2,7 @@
 
 const net = require("net");
 const tls = require("tls");
-const { createJsonLineParser, stringifyLine } = require("./json-lines");
+const { createJsonLineParser, formatProtocolLog, stringifyLine } = require("./json-lines");
 const { parsePoolAddress } = require("./config");
 
 function poolAlgoName(config, algo) {
@@ -57,7 +57,7 @@ function connectPool(options) {
 
   let isPoolOk = false;
   const parser = createJsonLineParser((json) => {
-    if (options.debug && logger) logger.log(`Pool message: ${  JSON.stringify(json)}`);
+    if (options.debug && logger) logger.log(`Pool message: ${  formatProtocolLog(json)}`);
     if (!isPoolOk && (json.error === null || typeof json.error === "undefined")) {
       options.onOk(poolNum, socket);
       isPoolOk = true;
@@ -66,13 +66,13 @@ function connectPool(options) {
       if (isKeepaliveReply(json)) {
         if (options.verbose && logger) logger.log("Keepalive reply received from the pool");
       } else {
-        options.onMessage(json);
+        options.onMessage(json, socket);
       }
     } else if (logger) {
-      logger.err(`Ignoring pool (${  poolLabel  }) message since pool has not confirmed login yet: ${  JSON.stringify(json)}`);
+      logger.err(`Ignoring pool (${  poolLabel  }) message since pool has not confirmed login yet: ${  formatProtocolLog(json)}`);
     }
-  }, (message) => {
-    if (logger) logger.err(`Can't parse message from the pool (${  poolLabel  }): ${  message}`);
+  }, (message, error) => {
+    if (logger) logger.err(`Can't parse message from the pool (${  poolLabel  }, ${  Buffer.byteLength(message)  } bytes): ${  error.message}`);
   });
 
   socket.on("data", (msg) => parser.push(msg));
@@ -97,7 +97,7 @@ function connectPool(options) {
 
 function writePoolSocket(socket, message, logger, debug) {
   const line = typeof message === "string" ? message : stringifyLine(message);
-  if (debug && logger) logger.log(`Multi-Miner message to pool: ${  line.trimEnd()}`);
+  if (debug && logger) logger.log(`Multi-Miner message to pool: ${  formatProtocolLog(message)}`);
   socket.write(line);
 }
 

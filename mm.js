@@ -8,6 +8,7 @@ const { forEachHashrate } = require("./src/hashrate");
 const { Logger } = require("./src/logger");
 const { checkMiners } = require("./src/miner-check");
 const { MinerServer } = require("./src/miner-server");
+const { gzipPearlSubmit } = require("./src/pearl");
 const { connectPool, writePoolSocket } = require("./src/pool-client");
 const { createEthProxyWorkTracker, detectMinerProtocol, ethProxySubmit, ethProxyWork, formatMinerReply, grinJsonReply, isEthProxyWorkResult, jsonError, jsonReply } = require("./src/protocol");
 const { forwardGrinPoolMessage: forwardGrinMessage, recordPoolMessage: recordPoolState } = require("./src/pool-state");
@@ -15,7 +16,7 @@ const { startMiner, treeKill } = require("./src/process-manager");
 const { stringifyLine } = require("./src/json-lines");
 const { startWatchdogs: startWatchdogTimers } = require("./src/watchdogs");
 
-const VERSION = "v5.1";
+const VERSION = "v5.2.0";
 const AGENT = `Multi-Miner ${  VERSION}`;
 
 // Auto-restart backoff for an unexpectedly-closed miner so a persistently-failing miner doesn't
@@ -55,6 +56,7 @@ class MultiMinerApp {
     this.currPoolNum = 0;
     this.currMiner = null;
     this.currAlgo = null;
+    this.benchmarkAlgo = null;
     this.lastAlgoChangeTime = null;
     this.lastMinerHashrate = null;
     this.mainPoolCheckTimer = null;
@@ -65,6 +67,7 @@ class MultiMinerApp {
     this.lastMinerStartTime = 0;
     this.nextMinerToRun = null;
     this.isWantMinerKill = false;
+    this.isStopping = false;
     this.minerLastSubmitTime = null;
     this.watchdogTimers = [];
     this.minerServer = new MinerServer({
@@ -74,6 +77,7 @@ class MultiMinerApp {
       getPoolSocket: () => this.currPoolSocket,
       getPoolLabel: () => this.poolLabel(),
       getCurrentMiner: () => this.currMiner,
+      getCurrentAlgo: () => this.benchmarkAlgo || this.currPoolJobAlgo,
       replaceMiner: (cmd) => this.replaceMiner(cmd),
       onSubmit: () => { this.minerLastSubmitTime = Date.now(); },
     });
@@ -150,6 +154,7 @@ class MultiMinerApp {
         printMessages: (str) => this.printMessages(str),
         server: this.minerServer,
         startMiner: (cmd, outCb) => this.startMinerProcess(cmd, outCb),
+        setBenchmarkAlgo: (algo) => { this.benchmarkAlgo = algo; },
         timeoutMs: this.options.benchmarkTimeoutMs,
       }, resolve);
     });
@@ -164,6 +169,9 @@ class MultiMinerApp {
   }
 
   async stop() {
+    this.isStopping = true;
+    this.nextMinerToRun = null;
+    this.isWantMinerKill = true;
     for (const timer of this.watchdogTimers) clearInterval(timer);
     this.watchdogTimers = [];
     clearTimeout(this.mainPoolCheckTimer);
@@ -236,7 +244,9 @@ class MultiMinerApp {
     }
     if (this.minerServer.protocol === "eth") {
       if (this.pendingEthSubscribeId !== null || this.delayNextEthFirstJob) { this.pendingEthFirstJob = { json, socket }; this.schedulePendingEthFirstJob(); return; }
-      if (Array.isArray(this.currPoolLastJob)) {
+      if (this.currAlgo === "pearlhash") {
+        this.minerServer.write(socket, stringifyLine({ jsonrpc: "2.0", id: null, method: "mining.notify", params: this.currPoolLastJob }));
+      } else if (Array.isArray(this.currPoolLastJob)) {
         const extraNonce = this.currentPoolExtraNonce();
         if (extraNonce) this.minerServer.write(socket, stringifyLine(this.poolControlForCurrentAlgo(extraNonce)));
         if (this.shouldSendEthTarget()) this.minerServer.write(socket, stringifyLine(this.currPoolLastTarget));
@@ -339,6 +349,16 @@ class MultiMinerApp {
     return Object.assign({}, adjustedMessage, { algo });
   }
 
+  poolMessageForMiner(json, nextJobAlgo) {
+    if (this.minerServer.protocol === "eth" && this.currAlgo === "pearlhash" && nextJobAlgo !== null) {
+      return { jsonrpc: "2.0", id: null, method: "mining.notify", params: this.currPoolLastJob };
+    }
+    if (json.method === "mining.set_extranonce" || json.method === "set_extranonce") {
+      return this.poolControlForCurrentAlgo(json);
+    }
+    return json;
+  }
+
   handleMinerSubscribe(json, socket) {
     if (this.minerServer.socket) {
       this.replaceMiner(this.currMiner);
@@ -359,7 +379,14 @@ class MultiMinerApp {
   forwardMinerRequest(json, socket) {
     if (!json || typeof json !== "object" || this.minerServer.socket !== socket || !this.currPoolSocket) return null;
     const hasId = Object.prototype.hasOwnProperty.call(json, "id");
-    let message = json;
+    let message;
+    try {
+      message = gzipPearlSubmit(this.currAlgo, this.currPoolLastJob, json);
+    } catch (error) {
+      this.logger.err(`Rejecting Pearl submission locally: ${  error.message}`);
+      this.minerServer.write(socket, jsonError(json, "Invalid Pearl proof"));
+      return null;
+    }
     let upstreamId = null;
     if (hasId) {
       upstreamId = this.nextMinerRequestId++;
@@ -371,7 +398,7 @@ class MultiMinerApp {
         booleanSubmit: this.currMinerBooleanSubmit,
         method: json.method,
       });
-      message = Object.assign({}, json, { id: upstreamId });
+      message = Object.assign({}, message, { id: upstreamId });
     }
     this.writePool(message);
     if (json.method === "submit" || json.method === "mining.submit") this.minerServer.onSubmit();
@@ -393,13 +420,14 @@ class MultiMinerApp {
     this.forwardMinerRequest(ethProxySubmit(json, this.config.user, job), socket);
   }
   connectPool(poolNum) {
+    if (this.isStopping) return;
     connectPool({
       agent: AGENT,
       config: this.config,
       debug: this.flags.debug,
       logger: this.logger,
       onError: (num) => this.poolErr(num),
-      onMessage: (json) => this.poolNewMsg(json),
+      onMessage: (json, socket) => this.poolNewMsg(json, socket),
       onOk: (num, socket) => this.poolOk(num, socket),
       poolNum,
       verbose: this.flags.verbose,
@@ -407,6 +435,10 @@ class MultiMinerApp {
   }
 
   poolOk(poolNum, poolSocket) {
+    if (this.isStopping) {
+      if (poolSocket) poolSocket.destroy();
+      return;
+    }
     if (poolNum) {
       if (!this.mainPoolCheckTimer) this.setMainPoolCheckTimer();
     } else if (this.mainPoolCheckTimer) {
@@ -478,7 +510,11 @@ class MultiMinerApp {
     }
   }
 
-  poolNewMsg(json) {
+  isCurrentPoolFrame(sourceSocket) { return !this.isStopping && (!sourceSocket || sourceSocket === this.currPoolSocket); }
+  waitingForEthSubscribe() { return this.minerServer.protocol === "eth" && this.pendingEthSubscribeId !== null; }
+
+  poolNewMsg(json, sourceSocket) {
+    if (!this.isCurrentPoolFrame(sourceSocket)) return;
     if (this.forwardPoolReply(json)) return;
 
     const previousPoolJobAlgo = this.currPoolJobAlgo;
@@ -488,6 +524,9 @@ class MultiMinerApp {
     const nextJobAlgo = this.recordPoolMessage(json);
     if (nextJobAlgo !== null && !this.switchAlgo(nextJobAlgo)) return;
     if (!this.minerServer.socket) return;
+    // Subscribe replies must precede controls/jobs. The newest pool state is
+    // already cached and sendFirstJob replays it after subscribe completes.
+    if (this.waitingForEthSubscribe()) return;
     if (nextJobAlgo !== null && this.pendingMinerFirstJob) {
       const pending = this.pendingMinerFirstJob;
       this.pendingMinerFirstJob = null;
@@ -522,11 +561,7 @@ class MultiMinerApp {
     }
     if (sameActiveChild) this.replayPoolControls(nextJobAlgo, previousPoolJobAlgo !== nextJobAlgo,
       previousTargetPending, previousExtraNoncePending);
-    let message = json;
-    if (json.method === "mining.set_extranonce" || json.method === "set_extranonce") {
-      message = this.poolControlForCurrentAlgo(json);
-    }
-    this.minerServer.write(this.minerServer.socket, stringifyLine(message));
+    this.minerServer.write(this.minerServer.socket, this.poolMessageForMiner(json, nextJobAlgo));
   }
 
   schedulePendingEthFirstJob() { if (this.pendingEthFirstJobTimer || !this.pendingEthFirstJob || this.pendingEthSubscribeId !== null) return; this.pendingEthFirstJobTimer = setTimeout(() => this.flushPendingEthFirstJob(), 250); }
@@ -556,6 +591,7 @@ class MultiMinerApp {
   forwardGrinPoolMessage(json) { forwardGrinMessage(this, json); }
 
   poolErr(poolNum) {
+    if (this.isStopping) return;
     if (poolNum === 0 && this.currPoolNum) {
       if (!this.mainPoolCheckTimer) this.logger.err("[INTERNAL ERROR] Unexpected mainPoolCheckTimer state in poolErr");
       this.setMainPoolCheckTimer();
@@ -582,7 +618,7 @@ class MultiMinerApp {
   }
 
   replaceMiner(nextMiner) {
-    if (!nextMiner) return;
+    if (this.isStopping || !nextMiner) return;
     // A deliberate algo change is a fresh context — clear crash-loop backoff state so a paused
     // auto-restart recovers.
     this.minerRestartFailures = 0;
@@ -594,6 +630,10 @@ class MultiMinerApp {
       this.nextMinerToRun = nextMiner;
       if (this.flags.verbose) this.logger.log(`Stopping '${  this.currMiner  }' miner`);
       this.minerProc.once("close", () => {
+        if (this.isStopping) {
+          this.nextMinerToRun = null;
+          return;
+        }
         const command = this.nextMinerToRun;
         this.nextMinerToRun = null;
         this.minerProc = this.startMinerProcess(command, (str) => this.printAllMessages(str));
@@ -606,6 +646,7 @@ class MultiMinerApp {
   }
 
   startMinerProcess(cmd, outCb) {
+    if (this.isStopping) return null;
     this.lastMinerHashrate = null;
     // A new start (auto-restart, algo change, or initial) supersedes any pending backoff restart.
     clearTimeout(this.minerRestartTimer);
@@ -638,6 +679,7 @@ class MultiMinerApp {
     // The process is dead; clear the handle so replaceMiner doesn't attach once('close') to a proc
     // that already emitted 'close' (which would never fire and wedge miner startup).
     this.minerProc = null;
+    if (this.isStopping) return;
     if (!this.currPoolSocket || this.isWantMinerKill) return;
     // Backoff + cap so a persistently-failing miner doesn't restart-storm. A miner that ran longer
     // than the reset window was a transient glitch, not a crash loop, so reset the failure count.

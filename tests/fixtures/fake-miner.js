@@ -11,7 +11,7 @@ let ethProxyHeader = "0x00";
 const parser = createJsonLineParser(handleJson, () => {});
 
 socket.on("connect", () => {
-  if (args.protocol === "eth") {
+  if (args.protocol === "eth" || args.protocol === "pearl") {
     write({ id: 1, jsonrpc: "2.0", method: "mining.subscribe", params: [] });
     write({ id: 2, jsonrpc: "2.0", method: "mining.authorize", params: [args.user || "wallet", args.pass || "x"] });
     return;
@@ -41,7 +41,10 @@ socket.on("error", () => process.exit(2));
 function handleJson(json) {
   if (submitted) return;
   if (json.method === "job" || (json.result && json.result.job)) submitDefault(json);
-  if (json.method === "mining.notify") submitEth(json);
+  if (json.method === "mining.notify") {
+    if (args.protocol === "pearl") submitPearl(json);
+    else submitEth(json);
+  }
   if (json.method === "getjobtemplate") submitGrin(json);
   if (args.protocol === "ethproxy" && json.result && Array.isArray(json.result) && json.result.length >= 3) submitEthProxy(json.result[0]);
 }
@@ -56,6 +59,22 @@ function submitEth(json) {
   submitted = true;
   const jobId = Array.isArray(json.params) ? json.params[0] : "job1";
   write({ id: 3, jsonrpc: "2.0", method: "mining.submit", params: [args.user || "wallet", jobId, "00", "00", "00"] });
+}
+
+function submitPearl(json) {
+  submitted = true;
+  const job = json.params && typeof json.params === "object" ? json.params : {};
+  write({
+    id: 3,
+    jsonrpc: "2.0",
+    method: "mining.submit",
+    params: {
+      job_id: job.job_id || "job1",
+      plain_proof: "A".repeat(1024 * 1024 + 4),
+      proof_encoding: "none",
+    },
+  });
+  setTimeout(() => process.stdout.write("Total: 1 TH/s\nTotal: 1 TH/s\nTotal: 1 TH/s\n"), 50);
 }
 
 function submitEthProxy(header) {

@@ -125,7 +125,7 @@ Useful options:
 | `--log=<file>`, `--no-config-save`, `--help` | Log file, skip config save, usage. |
 
 Current MoneroOcean GPU algorithms covered by Multi-Miner metadata include
-`autolykos2`, `c29`, `cn/gpu`, `etchash`, and `kawpow`.
+`autolykos2`, `c29`, `cn/gpu`, `etchash`, `kawpow`, and `pearlhash`.
 Existing `algo_perf.kawpow` values keep their legacy units and are reported unchanged. New
 benchmarks and `--perf_kawpow` values are stored as `algo_perf.kawpow1` in raw H/s.
 
@@ -165,6 +165,25 @@ SRBMiner-Multi for `autolykos2`, `etchash`, and `kawpow`:
   --etchash="./SRBMiner-MULTI --algorithm etchash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu" \
   --kawpow="./SRBMiner-MULTI --algorithm kawpow --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
 ```
+
+BZMiner for `pearlhash`:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --pearlhash="./bzminer -a pearl -p stratum+tcp://127.0.0.1:3333 -w YOUR_XMR_WALLET --pass x --worker multi-miner --nvidia"
+```
+
+SRBMiner-Multi for `pearlhash`:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --pearlhash="./SRBMiner-MULTI --algorithm pearlhash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
+```
+
+When a Pearl pool advertises gzip support, Multi-Miner passes that capability
+to the miner and compresses an uncompressed proof when that reduces its size.
+If gzip would be larger, the original proof is forwarded; proofs already encoded
+by the miner are also forwarded unchanged.
 
 For SRBMiner Etchash `--esm 0`, Multi-Miner accepts the initial `eth_getWork`
 request and forwards pushed getWork-style job refreshes from the pool, so stale
@@ -230,6 +249,7 @@ GMiner:         --server gulf.moneroocean.stream --port 20128 --ssl 1 --pass wor
 lolMiner:       --pool gulf.moneroocean.stream:20128 --tls on --pass worker~etchash --ethstratum ETHV1
 T-Rex:          -o stratum2+ssl://gulf.moneroocean.stream:20128 -p worker~kawpow --no-strict-ssl
 Rigel:          -o stratum+ssl://gulf.moneroocean.stream:20128 -p worker~kawpow --no-strict-ssl
+BZMiner:        -a pearl -p stratum+ssl://gulf.moneroocean.stream:20128 --pass worker~pearl --nvidia
 ```
 
 For lolMiner Etchash, both `--ethstratum ETHV1` and `--ethstratum ETHPROXY`
@@ -242,7 +262,7 @@ worked in direct testing. SRBMiner-Multi Etchash direct testing against
 If `algo_perf` is missing or set to `0` for a configured benchmark algorithm,
 Multi-Miner starts the miner against a local fake job and reads hashrate from
 miner output. Hashrate parsing includes common formats from XMRig, xmr-stak,
-SRBMiner-Multi, lolMiner, GMiner, Rigel, T-Rex, TeamRedMiner, Team Black Miner,
+SRBMiner-Multi, BZMiner, lolMiner, GMiner, Rigel, T-Rex, TeamRedMiner, Team Black Miner,
 CryptoDredge, Claymore, and legacy formats.
 
 For specific re-benchmarking:
@@ -283,10 +303,10 @@ Requirements:
 - Node.js 22.9.0 or newer (npm 11.10.0 or newer) for source usage and tests.
 - Network access only for installing build tooling or contacting real pools.
 
-Install the pinned development toolchain from the committed lockfile:
+Install the development dependencies without creating a lockfile:
 
 ```sh
-npm ci
+npm install --no-package-lock
 ```
 
 Build the current platform binary:
@@ -360,6 +380,7 @@ are checked explicitly:
 MM_LIVE_MINER_ROOT=/path/to/miners npm run test:live:nvidia-gpu
 MM_LIVE_NVIDIA_GPU_MINERS=trex-etchash,rigel-kawpow npm run test:live:nvidia-gpu
 MM_LIVE_NVIDIA_GPU_MINERS=srbminer-etchash,srbminer-etchash-ethstratum2,srbminer-etchash-ethproxy,trex-etchash,trex-etchash-stratum2 npm run test:live:nvidia-gpu
+MM_LIVE_NVIDIA_GPU_MINERS=srbminer-pearlhash,bzminer-pearlhash npm run test:live:nvidia-gpu
 ```
 
 The NVIDIA `xmrig-cuda-rx-0` live case needs the MoneroOcean XMRig fork and the

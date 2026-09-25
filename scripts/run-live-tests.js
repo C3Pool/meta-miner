@@ -25,6 +25,8 @@ const CASE_LABELS = {
   "srbminer-etchash-ethstratum2": "SRBMiner etchash stratum2",
   "srbminer-etchash-ethproxy": "SRBMiner etchash eth_getWork",
   "srbminer-kawpow": "SRBMiner kawpow",
+  "srbminer-pearlhash": "SRBMiner pearlhash",
+  "bzminer-pearlhash": "BZMiner pearlhash",
   "lolminer-autolykos2": "lolMiner autolykos2",
   "lolminer-etchash": "lolMiner etchash ETHV1",
   "lolminer-etchash-ethproxy": "lolMiner etchash ETHPROXY",
