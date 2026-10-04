@@ -33,7 +33,7 @@ function validateConfig(config) {
 
   const gpuConfigured = CURRENT_GPU_ALGOS.filter((algo) => config.algos && config.algos[algo]);
   if (gpuConfigured.length === 0) {
-    warnings.push(`No current MoneroOcean GPU algorithms are configured: ${  CURRENT_GPU_ALGOS.join(", ")}`);
+    warnings.push(`No current C3Pool GPU algorithms are configured: ${  CURRENT_GPU_ALGOS.join(", ")}`);
   }
 
   return { errors, warnings };

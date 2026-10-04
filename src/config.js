@@ -20,8 +20,8 @@ function createDefaultConfig() {
     log_file: null,
     watchdog: 600,
     hashrate_watchdog: 0,
-    // TLS pool cert validation. Default false because the MoneroOcean pool serves self-signed certs on
-    // its TLS stratum ports (CN=mining.proxy) — validating by default would break the connection. Set
+    // TLS pool cert validation. Default false because MoneroOcean and C3Pool serve self-signed certs on
+    // their TLS stratum ports (CN=mining.proxy / CN=mining.pool) — validating by default would break the connection. Set
     // true only for pools with CA-signed certs to harden against on-path MITM.
     tls_reject_unauthorized: false,
   };

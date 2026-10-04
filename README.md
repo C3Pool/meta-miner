@@ -2,21 +2,21 @@
 
 # multi-miner
 
-Local stratum shim that adds MoneroOcean-style algorithm switching to miners that lack pool-side algo switching.
+Local stratum shim that adds C3Pool algorithm switching to miners that lack pool-side algo switching.
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.9.0-brightgreen.svg" alt="Node >=22.9.0">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/focus-multi--algo%20miner%20manager-2da44e.svg" alt="Focus">
-  <a href="https://github.com/MoneroOcean"><img src="https://img.shields.io/badge/MoneroOcean-ecosystem-6f42c1.svg" alt="MoneroOcean"></a>
+  <a href="https://c3pool.com"><img src="https://img.shields.io/badge/C3Pool-mining%20pool-6f42c1.svg" alt="C3Pool"></a>
 </p>
 
 </div>
 
 ## Overview
 
-Multi-Miner adds MoneroOcean-style algorithm switching support to stratum
+Multi-Miner adds C3Pool algorithm switching support to stratum
 miners that do not implement pool-side algo switching themselves. It runs a
 local stratum endpoint for your miner, connects to one or more upstream pools,
 and starts the configured miner command for each algorithm requested by the
@@ -24,9 +24,29 @@ pool.
 
 Multi-Miner does not add a mining fee. The project remains GPLv3.
 
-Multi-Miner sits between your miner and the [MoneroOcean pool backend](https://github.com/MoneroOcean/nodejs-pool):
+Multi-Miner sits between your miner and the [C3Pool](https://c3pool.com) pool:
 the pool announces which algorithm to mine, and Multi-Miner swaps the active
 miner command to match.
+
+## 中文快速上手
+
+Multi-Miner 是一个本地 stratum 中转：矿机连本机 `127.0.0.1:3333`，Multi-Miner
+连 C3Pool，并按矿池下发的算法自动切换到对应的挖矿程序（CPU 与显卡程序可混用）。
+
+1. 从 [Releases](https://github.com/C3Pool/meta-miner/releases) 下载对应平台的压缩包，解压到挖矿程序旁边。
+2. 每个挖矿程序都配置为连接 `127.0.0.1:3333`（不要直连矿池、不要开 TLS）。
+3. 启动，例如 XMRig 跑 CPU + SRBMiner 跑显卡 `kawpow` / `etchash` / `autolykos2`：
+
+```sh
+./mm -p=auto.c3pool.org:ssl33333 -u=你的钱包地址 --pass=矿机名 \
+  -m="./xmrig -o 127.0.0.1:3333 -u 你的钱包地址 -p x" \
+  --kawpow="./SRBMiner-MULTI --algorithm kawpow --pool 127.0.0.1:3333 --wallet 你的钱包地址 --password x --disable-cpu" \
+  --etchash="./SRBMiner-MULTI --algorithm etchash --pool 127.0.0.1:3333 --wallet 你的钱包地址 --password x --disable-cpu" \
+  --autolykos2="./SRBMiner-MULTI --algorithm autolykos2 --pool 127.0.0.1:3333 --wallet 你的钱包地址 --password x --disable-cpu"
+```
+
+首次运行会对每个算法做一次本地基准测试并写入 `mm.json`，之后直接 `./mm` 即可启动。
+矿池地址：TLS `auto.c3pool.org:ssl33333`（推荐）、TCP `auto.c3pool.org:19999`。
 
 ## Features
 
@@ -53,25 +73,26 @@ Release binaries are OS and CPU architecture specific:
 | macOS Intel x64 | `mm` |
 | macOS arm64 | `mm` |
 
-Download the archive for your platform, unpack it beside your miner, and point
+Download the archive for your platform from
+[Releases](https://github.com/C3Pool/meta-miner/releases), unpack it beside your miner, and point
 the miner at Multi-Miner's local pool, usually `127.0.0.1:3333`.
 
 Windows:
 
 ```powershell
-.\mm.exe -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x --rx/0="xmrig.exe --config=config.json"
+.\mm.exe -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x --rx/0="xmrig.exe --config=config.json"
 ```
 
 Linux and macOS:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x --rx/0="./xmrig --config=config.json"
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x --rx/0="./xmrig --config=config.json"
 ```
 
 Source compatibility is kept. You can still run `mm.js` directly:
 
 ```sh
-node mm.js -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x --rx/0="./xmrig --config=config.json"
+node mm.js -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x --rx/0="./xmrig --config=config.json"
 ```
 
 ## Configuration
@@ -86,7 +107,7 @@ Minimal `mm.json`:
 {
   "miner_host": "127.0.0.1",
   "miner_port": 3333,
-  "pools": ["gulf.moneroocean.stream:ssl20128"],
+  "pools": ["auto.c3pool.org:ssl33333"],
   "algos": {
     "rx/0": "./xmrig --config=config.json",
     "cn/gpu": "./SRBMiner-MULTI --algorithm cryptonight_gpu --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu",
@@ -124,18 +145,27 @@ Useful options:
 | `--quiet` (`-q`), `--verbose` (`-v`), `--debug` | Logging verbosity. |
 | `--log=<file>`, `--no-config-save`, `--help` | Log file, skip config save, usage. |
 
-Current MoneroOcean GPU algorithms covered by Multi-Miner metadata include
+Current C3Pool GPU algorithms covered by Multi-Miner metadata include
 `autolykos2`, `c29`, `cn/gpu`, `etchash`, `kawpow`, and `pearlhash`.
 Existing `algo_perf.kawpow` values keep their legacy units and are reported unchanged. New
 benchmarks and `--perf_kawpow` values are stored as `algo_perf.kawpow1` in raw H/s.
 
-## MoneroOcean Examples
+## C3Pool Examples
 
-For MoneroOcean TLS, use `gulf.moneroocean.stream:ssl20128` in Multi-Miner.
+C3Pool endpoints for Multi-Miner:
+
+| Endpoint | Transport |
+| --- | --- |
+| `auto.c3pool.org:ssl33333` | TLS (recommended) |
+| `auto.c3pool.org:19999` | Plain TCP |
+| `auto.c3pool.org:443`, `auto.c3pool.org:80` | Plain TCP on firewall-friendly ports |
+
+The TLS port serves a self-signed certificate, so leave `tls_reject_unauthorized`
+at its default `false`.
 Miner commands should still connect to Multi-Miner locally without TLS at
 `127.0.0.1:3333`.
 
-These examples keep only the options needed for Multi-Miner and MoneroOcean
+These examples keep only the options needed for Multi-Miner and C3Pool
 compatibility. Add device selection, clocks, logging, API, or tuning options in
 your miner config when needed for your rig.
 
@@ -144,14 +174,14 @@ your miner config when needed for your rig.
 XMRig smart miner:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   -m="./xmrig -o 127.0.0.1:3333 -u YOUR_XMR_WALLET -p x"
 ```
 
 SRBMiner-Multi for `cn/gpu`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --perf_cn/gpu=1000 \
   --cn/gpu="./SRBMiner-MULTI --algorithm cryptonight_gpu --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
 ```
@@ -159,7 +189,7 @@ SRBMiner-Multi for `cn/gpu`:
 SRBMiner-Multi for `autolykos2`, `etchash`, and `kawpow`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
   --autolykos2="./SRBMiner-MULTI --algorithm autolykos2 --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu" \
   --etchash="./SRBMiner-MULTI --algorithm etchash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu" \
@@ -169,14 +199,14 @@ SRBMiner-Multi for `autolykos2`, `etchash`, and `kawpow`:
 BZMiner for `pearlhash`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --pearlhash="./bzminer -a pearl -p stratum+tcp://127.0.0.1:3333 -w YOUR_XMR_WALLET --pass x --worker multi-miner --nvidia"
 ```
 
 SRBMiner-Multi for `pearlhash`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --pearlhash="./SRBMiner-MULTI --algorithm pearlhash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
 ```
 
@@ -192,7 +222,7 @@ request and forwards pushed getWork-style job refreshes from the pool, so stale
 lolMiner for `autolykos2`, `etchash`, and `c29`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_c29=1 \
   --autolykos2="./lolMiner --algo AUTOLYKOS2 --pool 127.0.0.1:3333 --user YOUR_XMR_WALLET --pass x" \
   --etchash="./lolMiner --algo ETCHASH --pool 127.0.0.1:3333 --user YOUR_XMR_WALLET --pass x" \
@@ -202,7 +232,7 @@ lolMiner for `autolykos2`, `etchash`, and `c29`:
 GMiner for `autolykos2`, `etchash`, and `kawpow`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
   --autolykos2="./miner --algo autolykos2 --server 127.0.0.1 --port 3333 --user YOUR_XMR_WALLET --pass x --proto stratum" \
   --etchash="./miner --algo etchash --server 127.0.0.1 --port 3333 --user YOUR_XMR_WALLET --pass x --proto stratum" \
@@ -212,7 +242,7 @@ GMiner for `autolykos2`, `etchash`, and `kawpow`:
 Rigel for `autolykos2`, `etchash`, and `kawpow`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
   --autolykos2="./rigel -a autolykos2 -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
   --etchash="./rigel -a etchash -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
@@ -222,40 +252,39 @@ Rigel for `autolykos2`, `etchash`, and `kawpow`:
 T-Rex for `autolykos2`, `etchash`, and `kawpow`:
 
 ```sh
-./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+./mm -p=auto.c3pool.org:ssl33333 -u=YOUR_XMR_WALLET --pass=x \
   --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
   --autolykos2="./t-rex -a autolykos2 -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
   --etchash="./t-rex -a etchash -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
   --kawpow="./t-rex -a kawpow -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x"
 ```
 
-### Direct To MoneroOcean
+### Direct To C3Pool
 
-Direct miner commands are a reference for checking miner and MoneroOcean pool
+Direct miner commands are a reference for checking miner and C3Pool pool
 compatibility. They pin the miner to one algorithm, show the miner-specific TLS
 or stratum mode syntax, and pass the fixed algorithm in the password as
-`WORKER~algo`. Use Multi-Miner when you want MoneroOcean to switch between
+`WORKER~algo`. Use Multi-Miner when you want C3Pool to switch between
 different miner commands.
 
 In most cases, start from the Multi-Miner example and replace Multi-Miner's
-local `127.0.0.1:3333` pool with the direct MoneroOcean TLS endpoint. The
+local `127.0.0.1:3333` pool with the direct C3Pool TLS endpoint. The
 useful differences are the pool URL syntax and any miner-specific protocol
 mode:
 
 ```sh
-XMRig:          -o gulf.moneroocean.stream:20128 --tls -p worker~rx/0
-SRBMiner-Multi: --pool gulf.moneroocean.stream:20128 --tls true --password worker~cn/gpu
-GMiner:         --server gulf.moneroocean.stream --port 20128 --ssl 1 --pass worker~etchash --proto stratum
-lolMiner:       --pool gulf.moneroocean.stream:20128 --tls on --pass worker~etchash --ethstratum ETHV1
-T-Rex:          -o stratum2+ssl://gulf.moneroocean.stream:20128 -p worker~kawpow --no-strict-ssl
-Rigel:          -o stratum+ssl://gulf.moneroocean.stream:20128 -p worker~kawpow --no-strict-ssl
-BZMiner:        -a pearl -p stratum+ssl://gulf.moneroocean.stream:20128 --pass worker~pearl --nvidia
+XMRig:          -o auto.c3pool.org:33333 --tls -p worker~rx/0
+SRBMiner-Multi: --pool auto.c3pool.org:33333 --tls true --password worker~cn/gpu
+GMiner:         --server auto.c3pool.org --port 33333 --ssl 1 --pass worker~etchash --proto stratum
+lolMiner:       --pool auto.c3pool.org:33333 --tls on --pass worker~etchash --ethstratum ETHV1
+T-Rex:          -o stratum2+ssl://auto.c3pool.org:33333 -p worker~kawpow --no-strict-ssl
+Rigel:          -o stratum+ssl://auto.c3pool.org:33333 -p worker~kawpow --no-strict-ssl
+BZMiner:        -a pearl -p stratum+ssl://auto.c3pool.org:33333 --pass worker~pearl --nvidia
 ```
 
-For lolMiner Etchash, both `--ethstratum ETHV1` and `--ethstratum ETHPROXY`
-worked in direct testing. SRBMiner-Multi Etchash direct testing against
-`sg.moneroocean.stream` accepted shares with `--esm 1`, `--esm 2`, and
-`--esm 0`.
+Upstream testing found that lolMiner Etchash works with both
+`--ethstratum ETHV1` and `--ethstratum ETHPROXY`, and SRBMiner-Multi Etchash
+accepts shares with `--esm 0`, `--esm 1`, and `--esm 2`.
 
 ## Benchmarking And Hashrate
 
@@ -351,7 +380,7 @@ Set `MM_LIVE_DOWNLOAD=0` to disable live miner downloads and only use binaries
 already present in the local cache or specified by path overrides.
 
 Run the optional CPU live test. It uses only a fake localhost pool and downloads
-MoneroOcean XMRig into the local live cache when needed:
+the MoneroOcean XMRig fork into the local live cache when needed:
 
 ```sh
 npm run test:live:cpu
@@ -391,19 +420,18 @@ built for the installed NVIDIA driver/GPU and must be able to load its CUDA
 runtime dependencies; either install the matching CUDA runtime system-wide or
 place libraries such as `libnvrtc.so.*` beside `libxmrig-cuda.so`.
 
-## MoneroOcean ecosystem
+## Upstream
 
-| Component | Role |
-| --- | --- |
-| [nodejs-pool](https://github.com/MoneroOcean/nodejs-pool) | Pool backend — stratum, share storage, payments |
-| [mo-pool-ui](https://github.com/MoneroOcean/mo-pool-ui) | Static web frontend for the pool |
-| [xmr-node-proxy](https://github.com/MoneroOcean/xmr-node-proxy) | Stratum proxy / share aggregator |
-| [mo-miner](https://github.com/MoneroOcean/mo-miner) | MoneroOcean end-user CPU/GPU mining client (multi-algo) |
-| [multi-miner](https://github.com/MoneroOcean/multi-miner) | Multi-algo miner manager |
-| [node-powhash](https://github.com/MoneroOcean/node-powhash) | Native multi-algo PoW hashing addon |
-| [node-randomx](https://github.com/MoneroOcean/node-randomx) | Native RandomX hashing addon |
-| [node-blocktemplate](https://github.com/MoneroOcean/node-blocktemplate) | Native block-template & serialization addon |
-| [grpc-json-proxy](https://github.com/MoneroOcean/grpc-json-proxy) | gRPC ↔ JSON-RPC proxy (Tari base node) |
+This repository is C3Pool's fork of
+[MoneroOcean/multi-miner](https://github.com/MoneroOcean/multi-miner). The
+miner logic follows upstream; C3Pool changes are limited to branding, pool
+endpoints, and documentation. To pull in upstream changes:
+
+```sh
+git remote add upstream https://github.com/MoneroOcean/multi-miner.git
+git fetch upstream
+git merge upstream/master
+```
 
 ## License
 
