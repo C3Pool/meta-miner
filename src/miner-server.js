@@ -1,0 +1,150 @@
+"use strict";
+
+const net = require("net");
+const { createJsonLineParser, formatProtocolLog, stringifyLine } = require("./json-lines");
+const { ethSubscribeResult, jsonReply } = require("./protocol");
+
+const PEARL_MAX_LINE_BYTES = 12 * 1024 * 1024;
+
+class MinerServer {
+  constructor(options) {
+    this.config = options.config;
+    this.logger = options.logger;
+    this.flags = options.flags;
+    this.getPoolSocket = options.getPoolSocket;
+    this.getPoolLabel = options.getPoolLabel;
+    this.getCurrentMiner = options.getCurrentMiner;
+    this.getCurrentAlgo = options.getCurrentAlgo || (() => null);
+    this.replaceMiner = options.replaceMiner;
+    this.onSubmit = options.onSubmit;
+    this.handlers = {};
+    this.socket = null;
+    this.protocol = "default";
+    this.server = net.createServer((minerSocket) => this.handleConnection(minerSocket));
+  }
+
+  setHandlers(handlers) {
+    this.handlers = handlers || {};
+  }
+
+  listen(callback) {
+    this.server.listen(this.config.miner_port, this.config.miner_host, callback);
+  }
+
+  close(callback) {
+    const socket = this.socket;
+    if (socket) {
+      this.setCurrent(null);
+      socket.destroy();
+    }
+    this.server.close(callback);
+  }
+
+  setCurrent(socket, protocol) {
+    this.socket = socket;
+    this.protocol = protocol || "default";
+  }
+
+  write(socket, message) {
+    const line = typeof message === "string" ? message : stringifyLine(message);
+    if (this.flags.debug) this.logger.log(`Multi-Miner message to miner: ${  formatProtocolLog(message)}`);
+    socket.write(line);
+  }
+
+  handleConnection(minerSocket) {
+    if (this.socket) {
+      this.logger.err(`Miner server on ${  this.config.miner_host  }:${  this.config.miner_port  } port is already connected (please make sure you do not have other miner running)`);
+      // The rejected socket still needs an 'error' listener: without one, a socket
+      // error after end() (e.g. the peer sends RST) is rethrown by EventEmitter as
+      // an uncaught exception and crashes the whole miner process.
+      minerSocket.on("error", () => minerSocket.destroy());
+      minerSocket.end();
+      return;
+    }
+    if (this.flags.verbose) this.logger.log(`Miner server on ${  this.config.miner_host  }:${  this.config.miner_port  } port connected from ${  minerSocket.remoteAddress}`);
+
+    const parser = createJsonLineParser((json) => this.handleMessage(json, minerSocket), (message, error) => {
+      this.logger.err(`Can't parse message from the miner (${  Buffer.byteLength(message)  } bytes): ${  error.message}`);
+    }, () => this.getCurrentAlgo() === "pearlhash" ? PEARL_MAX_LINE_BYTES : undefined);
+
+    minerSocket.on("data", (msg) => parser.push(msg));
+    minerSocket.on("end", () => this.handleClose("closed", minerSocket));
+    minerSocket.on("error", () => {
+      this.logger.err("Miner socket error");
+      minerSocket.destroy();
+      this.handleClose("error", minerSocket);
+    });
+  }
+
+  handleMessage(json, minerSocket) {
+    if (this.flags.debug) this.logger.log(`Miner message: ${  formatProtocolLog(json)}`);
+    if (json.method === "login") {
+      this.handleLogin(json, minerSocket);
+    } else if (json.method === "mining.authorize") {
+      this.callHandler("login", json, minerSocket);
+      this.callHandler("firstJob", json, minerSocket);
+    } else if (json.method === "getjobtemplate") {
+      this.callHandler("firstJob", json, minerSocket);
+    } else if (json.method === "mining.subscribe") {
+      this.callHandler("subscribe", json, minerSocket);
+    } else if (json.method === "mining.extranonce.subscribe") {
+      if (this.handlers.extranonceSubscribe) this.callHandler("extranonceSubscribe", json, minerSocket);
+      else this.write(minerSocket, jsonReply(json, true));
+    } else if (json.method === "eth_submitLogin") {
+      this.callHandler("login", json, minerSocket);
+    } else if (json.method === "eth_getWork") {
+      this.callHandler("firstJob", json, minerSocket);
+    } else if (json.method === "eth_submitWork") {
+      this.callHandler("submitWork", json, minerSocket);
+    } else if (json.method === "eth_submitHashrate" || json.method === "eth_mining") {
+      this.write(minerSocket, jsonReply(json, true));
+    } else {
+      this.forwardMinerMessage(json, minerSocket);
+    }
+  }
+
+  handleLogin(json, minerSocket) {
+    if (this.socket) {
+      this.replaceMiner(this.getCurrentMiner());
+      return;
+    }
+    this.callHandler("login", json, minerSocket);
+    if (this.protocol !== "grin") this.callHandler("firstJob", json, minerSocket);
+  }
+
+  forwardMinerMessage(json, minerSocket) {
+    if (this.handlers.forward) {
+      this.callHandler("forward", json, minerSocket);
+      return;
+    }
+    const poolSocket = this.getPoolSocket();
+    if (poolSocket) {
+      poolSocket.write(stringifyLine(json));
+      if (json.method === "submit" || json.method === "mining.submit") this.onSubmit();
+    } else if (json.method !== "keepalived") {
+      this.logger.err("Can't write miner reply to the pool since its socket is closed");
+    }
+  }
+
+  callHandler(name, json, minerSocket) {
+    if (this.handlers[name]) this.handlers[name](json, minerSocket);
+  }
+
+  handleClose(reason, minerSocket) {
+    if (minerSocket !== this.socket) return;
+    if (this.flags.verbose) this.logger.log(`Miner socket was ${  reason}`);
+    if (this.getPoolSocket() && this.socket) {
+      this.logger.err(`Pool (${  this.getPoolLabel()  }) <-> miner link was broken due to ${  reason  } miner socket`);
+    }
+    this.setCurrent(null);
+  }
+}
+
+function benchmarkSubscribeReply(json, tag) {
+  return jsonReply(json, ethSubscribeResult(tag));
+}
+
+module.exports = {
+  MinerServer,
+  benchmarkSubscribeReply,
+};

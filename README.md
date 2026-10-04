@@ -1,198 +1,410 @@
-# meta-miner
-Meta Miner: allows to add algo switching support to *any* stratum miner.
+<div align="center">
 
-Does not add any extra mining fees.
+# multi-miner
 
-## Check mm.js builtin help
+Local stratum shim that adds MoneroOcean-style algorithm switching to miners that lack pool-side algo switching.
 
+<p>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A522.9.0-brightgreen.svg" alt="Node >=22.9.0">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/focus-multi--algo%20miner%20manager-2da44e.svg" alt="Focus">
+  <a href="https://github.com/MoneroOcean"><img src="https://img.shields.io/badge/MoneroOcean-ecosystem-6f42c1.svg" alt="MoneroOcean"></a>
+</p>
+
+</div>
+
+## Overview
+
+Multi-Miner adds MoneroOcean-style algorithm switching support to stratum
+miners that do not implement pool-side algo switching themselves. It runs a
+local stratum endpoint for your miner, connects to one or more upstream pools,
+and starts the configured miner command for each algorithm requested by the
+pool.
+
+Multi-Miner does not add a mining fee. The project remains GPLv3.
+
+Multi-Miner sits between your miner and the [MoneroOcean pool backend](https://github.com/MoneroOcean/nodejs-pool):
+the pool announces which algorithm to mine, and Multi-Miner swaps the active
+miner command to match.
+
+## Features
+
+- Local stratum endpoint (default `127.0.0.1:3333`) that any miner can point at.
+- Per-algorithm miner commands, switched automatically as the pool requests them.
+- Support for "smart" miners that report their own supported algorithms (`--miner`).
+- Multiple upstream pools, with additional `--pool` entries acting as backups.
+- TLS to the upstream pool via `sslPORT` / `tlsPORT` while keeping the local link plaintext.
+- Built-in benchmarking against a local fake job to populate `algo_perf`.
+- Hashrate parsing for XMRig, xmr-stak, SRBMiner-Multi, lolMiner, GMiner, Rigel,
+  T-Rex, TeamRedMiner, Team Black Miner, CryptoDredge, Claymore, and legacy formats.
+- Watchdog and hashrate-watchdog restarts for stalled miners.
+- Config validation via `--diagnostics`, with no external pool contact required.
+
+## Quick Start
+
+Release binaries are OS and CPU architecture specific:
+
+| Platform | Binary |
+| --- | --- |
+| Windows x64 | `mm.exe` |
+| Linux x64 | `mm` |
+| Linux arm64 | `mm` |
+| macOS Intel x64 | `mm` |
+| macOS arm64 | `mm` |
+
+Download the archive for your platform, unpack it beside your miner, and point
+the miner at Multi-Miner's local pool, usually `127.0.0.1:3333`.
+
+Windows:
+
+```powershell
+.\mm.exe -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x --rx/0="xmrig.exe --config=config.json"
 ```
-Usage: mm.js [<config_file.json>] [options]
-Adding algo switching support to *any* stratum miner
-<config_file.json> is file name of config file to load before parsing options (mm.json by default)
-Config file and options should define at least one pool and miner:
-Options:
-        --pool=<pool> (-p):             <pool> is in pool_address:pool_port format, where pool_port can be <port_number> or ssl<port_number>
-        --host=<hostname>:              defines host that will be used for miner connections (localhost 127.0.0.1 by default)
-        --port=<number>:                defines port that will be used for miner connections (3333 by default)
-        --user=<wallet> (-u):           <wallet> to use as pool user login (will be taken from the first miner otherwise)
-        --pass=<miner_id>:              <miner_id> to use as pool pass login (will be taken from the first miner otherwise)
-        --perf_<algo>=<hashrate>        Sets hashrate for algo that is: rx/0, rx/wow, cn/r, cn-pico/trtl, cn-heavy/xhv, cn/gpu, argon2/chukwa, k12, c29s, c29v, c29b, kawpow, ethash, autolykos2, panthera, ghostrider
-        --algo_min_time=<seconds>       Sets <seconds> minimum time pool should keep our miner on one algo (0 default, set higher for starting miners)
-        --miner=<command_line> (-m):    <command_line> to start smart miner that can report algo itself
-        --<algo>=<command_line>:        <command_line> to start miner for <algo> that can not report it itself
-        --watchdog=<seconds> (-w):      restart miner if is does not submit work for <seconds> (600 by default, 0 to disable)
-        --hashrate_watchdog=<percent>:  restart miner if is hashrate dropped below <percent> value of of its expected hashrate (0 by default to disable)
-        --miner_stdin:                  enables stdin (input) in miner
-        --quiet (-q):                   do not show miner output during configuration and also less messages
-        --verbose (-v):                 show more messages
-        --debug:                        show pool and miner messages
-        --log=<file_name>:              <file_name> of output log
-        --no-config-save:               Do not save config file
-        --help (-help,-h,-?):           Prints this help text
+
+Linux and macOS:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x --rx/0="./xmrig --config=config.json"
 ```
 
-Check https://github.com/xmrig/xmrig-proxy/blob/master/doc/STRATUM_EXT.md#14-algorithm-names-and-variants for list of possible algo names.
+Source compatibility is kept. You can still run `mm.js` directly:
 
-## Sample mm.json (to use with xmrig v2.99.0+ located in the same directory)
-
+```sh
+node mm.js -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x --rx/0="./xmrig --config=config.json"
 ```
+
+## Configuration
+
+Multi-Miner keeps the historical `mm.json` config format and all existing CLI
+option names. If no command line options are supplied, `mm.json` in the current
+directory is loaded.
+
+Minimal `mm.json`:
+
+```json
 {
- "miner_host": "127.0.0.1",
- "miner_port": 3333,
- "pools": [
-  "auto.c3pool.org:19999"
- ],
- "algos": {
-  "cn/1": "./xmrig --config=config.json",
-  "cn/2": "./xmrig --config=config.json",
-  "cn/r": "./xmrig --config=config.json",
-  "cn/fast": "./xmrig --config=config.json",
-  "cn/half": "./xmrig --config=config.json",
-  "cn/xao": "./xmrig --config=config.json",
-  "cn/rto": "./xmrig --config=config.json",
-  "cn/rwz": "./xmrig --config=config.json",
-  "cn/zls": "./xmrig --config=config.json",
-  "cn/double": "./xmrig --config=config.json",
-  "cn/gpu": "./xmrig --config=config.json",
-  "cn-heavy/0": "./xmrig --config=config.json",
-  "cn-heavy/tube": "./xmrig --config=config.json",
-  "cn-heavy/xhv": "./xmrig --config=config.json",
-  "cn-pico": "./xmrig --config=config.json",
-  "rx/0": "./xmrig --config=config.json",
-  "rx/wow": "./xmrig --config=config.json",
-  "rx/loki": "./xmrig --config=config.json",
-  "rx/arq": "./xmrig --config=config.json",
-  "rx/sfx": "./xmrig --config=config.json",
-  "argon2/chukwa": "./xmrig --config=config.json",
-  "argon2/wrkz": "./xmrig --config=config.json",
-  "ghostrider": "./xmrig --config=config.json",
-  "ethash": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo ethash --proto stratum",
-  "kawpow": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo kawpow",
-  "c29s": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckaroo29s",
-  "c29b": "./gminer/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckaroo29b",
-  "c29v": "./gminer39/miner --server localhost:3333 --user 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV --pass gpu_miner --algo cuckarood29",
-  "autolykos2": "./trex/t-rex -a autolykos2 -o stratum+tcp://localhost:3333 -u 43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV -p gpu_miner"
- },
- "algo_perf": {
-  "rx/0": 243.6,
-  "cn/r": 49.8,
-  "cn/gpu": 12.9,
-  "cn-heavy/xhv": 30.5,
-  "cn-pico/trtl": 0,
-  "rx/wow": 282.2,
-  "defyx": 0,
-  "argon2/chukwa": 4725.4,
-  "k12": 0,
-  "c29s": 0,
-  "c29v": 0,
-  "rx/loki": 243.6,
-  "cn/0": 49.8,
-  "cn/1": 49.8,
-  "cn/2": 49.8,
-  "cn/wow": 49.8,
-  "cn/fast": 99.6,
-  "cn/half": 99.6,
-  "cn/xao": 49.8,
-  "cn/rto": 49.8,
-  "cn/rwz": 66.39999999999999,
-  "cn/zls": 66.39999999999999,
-  "cn/double": 24.9,
-  "cn-heavy/0": 30.5,
-  "cn-heavy/tube": 30.5,
-  "c29b": 0.1865,
-  "c29s": 0.23375,
-  "c29v": 0.4875,
-  "kawpow": 0.003953464329242706,
-  "ethash": 49860000,
-  "autolykos2": 144120000,
-  "ghostrider": 1000
- },
- "algo_min_time": 0,
- "user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV",
- "pass": "x",
- "log_file": null,
- "watchdog": 600,
- "hashrate_watchdog": 0
+  "miner_host": "127.0.0.1",
+  "miner_port": 3333,
+  "pools": ["gulf.moneroocean.stream:ssl20128"],
+  "algos": {
+    "rx/0": "./xmrig --config=config.json",
+    "cn/gpu": "./SRBMiner-MULTI --algorithm cryptonight_gpu --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu",
+    "etchash": "./SRBMiner-MULTI --algorithm etchash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
+  },
+  "algo_perf": {
+    "rx/0": 1000,
+    "cn/gpu": 1000,
+    "etchash": 50000000
+  },
+  "user": "YOUR_XMR_WALLET",
+  "pass": "x",
+  "watchdog": 600,
+  "hashrate_watchdog": 0
 }
 ```
 
-## General configuration guidelines
+Useful options:
 
-* Configure your miners to connect to the single localhost:3333 (non SSL/TLS) pool.
+| Option | Description |
+| --- | --- |
+| `--pool=<host:port>` (`-p`) | Adds a pool. Use `sslPORT` or `tlsPORT` for TLS. |
+| `--host=<hostname>` | Local miner bind host. Default: `127.0.0.1`. |
+| `--port=<number>` | Local miner bind port. Default: `3333`. |
+| `--user=<wallet>` (`-u`) | Pool login. Uses first miner login if omitted. |
+| `--pass=<worker>` | Pool password/worker. Uses first miner pass if omitted. |
+| `--miner=<command>` (`-m`) | Smart miner that reports supported algorithms. |
+| `--<algo>=<command>` | Miner command for one algorithm. |
+| `--perf_<algo>=<hashrate>` | Expected hashrate; use `0` to benchmark again. |
+| `--algo_min_time=<seconds>` | Minimum time pool should keep one algorithm. |
+| `--watchdog=<seconds>` (`-w`) | Restart miner after no submits; `0` disables. |
+| `--hashrate_watchdog=<percent>` | Restart if reported hashrate drops below threshold. |
+| `--miner_stdin` | Inherit stdin for miner processes. |
+| `--diagnostics` | Validate config and exit. |
+| `--quiet` (`-q`), `--verbose` (`-v`), `--debug` | Logging verbosity. |
+| `--log=<file>`, `--no-config-save`, `--help` | Log file, skip config save, usage. |
 
-* For best results separate xmr-stak/xmrig CPU and GPU miners (by using --noCPU, --noAMD, --noNVIDIA options for xmr-stak).
+Current MoneroOcean GPU algorithms covered by Multi-Miner metadata include
+`autolykos2`, `c29`, `cn/gpu`, `etchash`, `kawpow`, and `pearlhash`.
+Existing `algo_perf.kawpow` values keep their legacy units and are reported unchanged. New
+benchmarks and `--perf_kawpow` values are stored as `algo_perf.kawpow1` in raw H/s.
 
-* Prepare your miner config files that give the best performance for your hardware on cryptonight, cryptonight-heavy, cryptonight-pico, randomx, randomx/wow, randomx/arq algorithm classes (not needed for xmrig v2.99+).
+## MoneroOcean Examples
 
-* If you have several miners on one host use mm.js --port option to assign them to different ports.
+For MoneroOcean TLS, use `gulf.moneroocean.stream:ssl20128` in Multi-Miner.
+Miner commands should still connect to Multi-Miner locally without TLS at
+`127.0.0.1:3333`.
 
-* Additional mm.js pools will be used as backup pools.
+These examples keep only the options needed for Multi-Miner and MoneroOcean
+compatibility. Add device selection, clocks, logging, API, or tuning options in
+your miner config when needed for your rig.
 
-* To rerun benchmark for specific algorithm class use --perf_*algo*=0 option.
+### Through Multi-Miner
 
-The configuration guide below is for stock xmrig. For xmr-stak/rx check [configuration guide for xmr-stak](xmr-stak.md) page.
-For GPU mining setup using gminer algo check [configuration guide for gminer](gminer.md) page.
-For c29 algo reference miner setup check [configuration guide for cuckaroo29](c29.md) page.
+XMRig smart miner:
 
-## Usage examples on Windows
-
-Place mm.exe or mm.js (with nodejs installed) into unpacked miner directory either by:
-
-* Download and unpack the latest mm-vX.X.zip from https://github.com/C3Pool/meta-miner/releases
-
-* Download and install nodejs using https://nodejs.org/dist/v8.11.3/node-v8.11.3-x64.msi installator and download and unpack https://raw.githubusercontent.com/C3Pool/meta-miner/master/mm.js
-
-### Usage example with xmrig on Windows
-
-* Download and unpack the lastest xmrig-amd (https://github.com/xmrig/xmrig/releases/download/v5.4.0/xmrig-5.4.0-msvc-win64.zip).
-
-* Modify config.json file in xmrig directory this way and adjust it for the best threads performance (out of scope of this guide):
-
-	* Set "url" to "localhost:3333"
-	* Set "user" to "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV" (put your Monero wallet address)
-
-* Run Meta Miner (or use "node mm.js" instead of mm.exe):
-
-```shell
-mm.exe -p=auto.c3pool.org:19999 -m="xmrig-amd.exe --config=config.json"
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  -m="./xmrig -o 127.0.0.1:3333 -u YOUR_XMR_WALLET -p x"
 ```
 
-## Usage examples on Linux (Ubuntu 18.04)
+SRBMiner-Multi for `cn/gpu`:
 
-Get node and Meta Miner (mm.js) in the miner directory:
-
-```shell
-sudo apt-get update
-sudo apt-get install -y nodejs
-wget https://raw.githubusercontent.com/C3Pool/meta-miner/master/mm.js
-chmod +x mm.js
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --perf_cn/gpu=1000 \
+  --cn/gpu="./SRBMiner-MULTI --algorithm cryptonight_gpu --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
 ```
 
-### Usage example with xmrig on Linux
+SRBMiner-Multi for `autolykos2`, `etchash`, and `kawpow`:
 
-* Get xmrig:
-
-```shell
-wget https://github.com/xmrig/xmrig/releases/download/v5.4.0/xmrig-5.4.0-xenial-x64.tar.gz
-tar xf xmrig-5.4.0-xenial-x64.tar.gz
-cd xmrig-5.4.0
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
+  --autolykos2="./SRBMiner-MULTI --algorithm autolykos2 --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu" \
+  --etchash="./SRBMiner-MULTI --algorithm etchash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu" \
+  --kawpow="./SRBMiner-MULTI --algorithm kawpow --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
 ```
 
-* Prepare configs for different algorithms (put your Monero wallet address):
+BZMiner for `pearlhash`:
 
-```shell
-sed -i 's/"url": *"[^"]*",/"url": "localhost:3333",/' config.json
-sed -i 's/"user": *"[^"]*",/"user": "43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV",/' config.json
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --pearlhash="./bzminer -a pearl -p stratum+tcp://127.0.0.1:3333 -w YOUR_XMR_WALLET --pass x --worker multi-miner --nvidia"
 ```
 
-* Run Meta Miner:
+SRBMiner-Multi for `pearlhash`:
 
-```shell
-./mm.js -p=auto.c3pool.org:19999 -m="./xmrig --config=config.json"
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --pearlhash="./SRBMiner-MULTI --algorithm pearlhash --pool 127.0.0.1:3333 --wallet YOUR_XMR_WALLET --password x --disable-cpu"
 ```
 
-## Developer Donations
+When a Pearl pool advertises gzip support, Multi-Miner passes that capability
+to the miner and compresses an uncompressed proof when that reduces its size.
+If gzip would be larger, the original proof is forwarded; proofs already encoded
+by the miner are also forwarded unchanged.
 
-If you'd like to make an one time donation, the addresses are as follows:
+For SRBMiner Etchash `--esm 0`, Multi-Miner accepts the initial `eth_getWork`
+request and forwards pushed getWork-style job refreshes from the pool, so stale
+`block expired` loops are not hidden behind the local proxy.
 
-* XMR - ```43987ATFjfFXp9yBojQoifVPK4CerTF7Zaoo4eDY2p6AEp5uewT3PsY7hYHEHvbRivKcexmSaDdXscnnNtveV56pJpCa9uV```
+lolMiner for `autolykos2`, `etchash`, and `c29`:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_c29=1 \
+  --autolykos2="./lolMiner --algo AUTOLYKOS2 --pool 127.0.0.1:3333 --user YOUR_XMR_WALLET --pass x" \
+  --etchash="./lolMiner --algo ETCHASH --pool 127.0.0.1:3333 --user YOUR_XMR_WALLET --pass x" \
+  --c29="./lolMiner --algo CR29 --pool 127.0.0.1:3333 --user YOUR_XMR_WALLET --pass x"
+```
+
+GMiner for `autolykos2`, `etchash`, and `kawpow`:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
+  --autolykos2="./miner --algo autolykos2 --server 127.0.0.1 --port 3333 --user YOUR_XMR_WALLET --pass x --proto stratum" \
+  --etchash="./miner --algo etchash --server 127.0.0.1 --port 3333 --user YOUR_XMR_WALLET --pass x --proto stratum" \
+  --kawpow="./miner --algo kawpow --server 127.0.0.1 --port 3333 --user YOUR_XMR_WALLET --pass x --proto stratum"
+```
+
+Rigel for `autolykos2`, `etchash`, and `kawpow`:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
+  --autolykos2="./rigel -a autolykos2 -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
+  --etchash="./rigel -a etchash -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
+  --kawpow="./rigel -a kawpow -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x"
+```
+
+T-Rex for `autolykos2`, `etchash`, and `kawpow`:
+
+```sh
+./mm -p=gulf.moneroocean.stream:ssl20128 -u=YOUR_XMR_WALLET --pass=x \
+  --perf_autolykos2=100000000 --perf_etchash=50000000 --perf_kawpow=50000000 \
+  --autolykos2="./t-rex -a autolykos2 -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
+  --etchash="./t-rex -a etchash -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x" \
+  --kawpow="./t-rex -a kawpow -o stratum+tcp://127.0.0.1:3333 -u YOUR_XMR_WALLET -p x"
+```
+
+### Direct To MoneroOcean
+
+Direct miner commands are a reference for checking miner and MoneroOcean pool
+compatibility. They pin the miner to one algorithm, show the miner-specific TLS
+or stratum mode syntax, and pass the fixed algorithm in the password as
+`WORKER~algo`. Use Multi-Miner when you want MoneroOcean to switch between
+different miner commands.
+
+In most cases, start from the Multi-Miner example and replace Multi-Miner's
+local `127.0.0.1:3333` pool with the direct MoneroOcean TLS endpoint. The
+useful differences are the pool URL syntax and any miner-specific protocol
+mode:
+
+```sh
+XMRig:          -o gulf.moneroocean.stream:20128 --tls -p worker~rx/0
+SRBMiner-Multi: --pool gulf.moneroocean.stream:20128 --tls true --password worker~cn/gpu
+GMiner:         --server gulf.moneroocean.stream --port 20128 --ssl 1 --pass worker~etchash --proto stratum
+lolMiner:       --pool gulf.moneroocean.stream:20128 --tls on --pass worker~etchash --ethstratum ETHV1
+T-Rex:          -o stratum2+ssl://gulf.moneroocean.stream:20128 -p worker~kawpow --no-strict-ssl
+Rigel:          -o stratum+ssl://gulf.moneroocean.stream:20128 -p worker~kawpow --no-strict-ssl
+BZMiner:        -a pearl -p stratum+ssl://gulf.moneroocean.stream:20128 --pass worker~pearl --nvidia
+```
+
+For lolMiner Etchash, both `--ethstratum ETHV1` and `--ethstratum ETHPROXY`
+worked in direct testing. SRBMiner-Multi Etchash direct testing against
+`sg.moneroocean.stream` accepted shares with `--esm 1`, `--esm 2`, and
+`--esm 0`.
+
+## Benchmarking And Hashrate
+
+If `algo_perf` is missing or set to `0` for a configured benchmark algorithm,
+Multi-Miner starts the miner against a local fake job and reads hashrate from
+miner output. Hashrate parsing includes common formats from XMRig, xmr-stak,
+SRBMiner-Multi, BZMiner, lolMiner, GMiner, Rigel, T-Rex, TeamRedMiner, Team Black Miner,
+CryptoDredge, Claymore, and legacy formats.
+
+For specific re-benchmarking:
+
+```sh
+./mm --perf_rx/0=0 --perf_cn/gpu=0
+```
+
+## Diagnostics
+
+Validate a config without connecting to an external pool:
+
+```sh
+./mm mm.json --diagnostics
+node mm.js mm.json --diagnostics
+```
+
+Common checks:
+
+```sh
+./mm --help
+./mm mm.json --verbose --debug
+```
+
+Troubleshooting notes:
+
+- Configure every miner to connect to Multi-Miner, not directly to the remote pool.
+- Use a unique `--port` for each Multi-Miner instance on the same host.
+- Keep quotes around miner commands that contain spaces.
+- Use backup pools by specifying `--pool` more than once.
+- Set `--watchdog=0` while debugging miner startup.
+- Use `--no-config-save` for temporary CLI-only test runs.
+
+## Development
+
+Requirements:
+
+- Node.js 22.9.0 or newer (npm 11.10.0 or newer) for source usage and tests.
+- Network access only for installing build tooling or contacting real pools.
+
+Install the development dependencies without creating a lockfile:
+
+```sh
+npm install --no-package-lock
+```
+
+Build the current platform binary:
+
+```sh
+npm run build:current
+```
+
+Build all release targets:
+
+```sh
+npm run build:release
+```
+
+The release workflow publishes clean per-platform archives containing only the
+binary, `README.md`, `LICENSE`, and user documentation files. Source, tests,
+CI metadata, caches, and development artifacts are excluded from release
+archives.
+
+## Testing
+
+Run the unit test suite, quality checks, and dependency audit:
+
+```sh
+npm test
+npm run quality
+npm run audit
+```
+
+Run all optional local live tests. These use fake localhost pools only and
+skip unavailable hardware. Missing supported miner distributions are downloaded
+into this repo's `.cache/live-miners` cache before the cases run. Every runnable
+case waits for a real share submit to the fake pool. C29 can take several
+minutes even at the lowest fake difficulty; override `MM_LIVE_C29_TIMEOUT_MS`
+if needed:
+
+```sh
+npm run test:live
+```
+
+Set `MM_LIVE_DOWNLOAD=0` to disable live miner downloads and only use binaries
+already present in the local cache or specified by path overrides.
+
+Run the optional CPU live test. It uses only a fake localhost pool and downloads
+MoneroOcean XMRig into the local live cache when needed:
+
+```sh
+npm run test:live:cpu
+XMRIG_PATH=/path/to/xmrig MM_LIVE_CPU_CASES=xmrig-rx-0,xmrig-panthera npm run test:live:cpu
+```
+
+Run the optional local Intel GPU live test. It uses only a fake localhost pool
+and skips if SRBMiner, mom, an algorithm, or an Intel OpenCL GPU is unavailable.
+SRBMiner-Multi and mom are downloaded into this repo's `.cache/live-miners`
+cache when needed. Override with `MM_LIVE_CACHE_DIR` or a miner-specific path:
+
+```sh
+npm run test:live:intel-gpu
+SRBMINER_PATH=/path/to/SRBMiner-MULTI npm run test:live:intel-gpu
+MOM_PATH=/path/to/mom MM_LIVE_MOM_C29_DEVICE=gpu1*1 npm run test:live:intel-gpu
+MM_LIVE_INTEL_GPU_CASES=srbminer-cn-gpu,mom-c29 npm run test:live:intel-gpu
+```
+
+Run the optional NVIDIA GPU miner matrix. It also uses fake localhost pools only
+and downloads supported miner distributions into this repo's `.cache/live-miners`
+cache when needed. Each passed case prints the miner protocol Multi-Miner observed
+(`default`, `eth`, `ethproxy`, or `grin`) so ETH-proxy and non-ETH-proxy modes
+are checked explicitly:
+
+```sh
+MM_LIVE_MINER_ROOT=/path/to/miners npm run test:live:nvidia-gpu
+MM_LIVE_NVIDIA_GPU_MINERS=trex-etchash,rigel-kawpow npm run test:live:nvidia-gpu
+MM_LIVE_NVIDIA_GPU_MINERS=srbminer-etchash,srbminer-etchash-ethstratum2,srbminer-etchash-ethproxy,trex-etchash,trex-etchash-stratum2 npm run test:live:nvidia-gpu
+MM_LIVE_NVIDIA_GPU_MINERS=srbminer-pearlhash,bzminer-pearlhash npm run test:live:nvidia-gpu
+```
+
+The NVIDIA `xmrig-cuda-rx-0` live case needs the MoneroOcean XMRig fork and the
+MoneroOcean `xmrig-cuda` plugin. Put them under the live miner cache as
+`xmrig-mo/.../xmrig` and `xmrig-cuda/.../libxmrig-cuda.so`, or point
+`MM_LIVE_MINER_ROOT` at a directory with that layout. The CUDA plugin must be
+built for the installed NVIDIA driver/GPU and must be able to load its CUDA
+runtime dependencies; either install the matching CUDA runtime system-wide or
+place libraries such as `libnvrtc.so.*` beside `libxmrig-cuda.so`.
+
+## MoneroOcean ecosystem
+
+| Component | Role |
+| --- | --- |
+| [nodejs-pool](https://github.com/MoneroOcean/nodejs-pool) | Pool backend — stratum, share storage, payments |
+| [mo-pool-ui](https://github.com/MoneroOcean/mo-pool-ui) | Static web frontend for the pool |
+| [xmr-node-proxy](https://github.com/MoneroOcean/xmr-node-proxy) | Stratum proxy / share aggregator |
+| [mo-miner](https://github.com/MoneroOcean/mo-miner) | MoneroOcean end-user CPU/GPU mining client (multi-algo) |
+| [multi-miner](https://github.com/MoneroOcean/multi-miner) | Multi-algo miner manager |
+| [node-powhash](https://github.com/MoneroOcean/node-powhash) | Native multi-algo PoW hashing addon |
+| [node-randomx](https://github.com/MoneroOcean/node-randomx) | Native RandomX hashing addon |
+| [node-blocktemplate](https://github.com/MoneroOcean/node-blocktemplate) | Native block-template & serialization addon |
+| [grpc-json-proxy](https://github.com/MoneroOcean/grpc-json-proxy) | gRPC ↔ JSON-RPC proxy (Tari base node) |
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).
